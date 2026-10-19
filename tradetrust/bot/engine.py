@@ -216,13 +216,14 @@ class Bot:
             if p.expires_at <= now() and self.store.claim_proposal(p.id, "expired"):
                 self._edit(p, f"⌛ Предложение по {p.coin} истекло")
 
-    def _edit(self, p: Proposal, text: str) -> None:
+    def _edit(self, p: Proposal, text: str, log_event: bool = True) -> None:
         if p.message_id:
             try:
                 self.notifier.edit(p.message_id, text)
             except Exception:
                 log.exception("edit failed")
-        self.store.log(text)
+        if log_event:
+            self.store.log(text)
 
     def confirm(self, pid: str) -> str:
         with self.lock:
@@ -240,7 +241,7 @@ class Bot:
                 return f"Бот на паузе: {self.paused}"
             result = self.open(p.coin, p.stop, ref_price=p.price)
             self.store.set_proposal_status(pid, "confirmed" if result.startswith("✅") else "failed")
-            self._edit(p, result)
+            self._edit(p, result, log_event=not result.startswith("✅"))  # успешную покупку уже записал open()
             return result
 
     def reject(self, pid: str) -> str:
@@ -290,9 +291,10 @@ class Bot:
             self.store.save_position(pos)
             text = (f"✅ Куплено {qty} {coin} по {fmt(fill.avg_price)} (≈{float(qty) * fill.avg_price:,.2f} USDT). "
                     f"Стоп {fmt(float(trigger))}, риск {pos.risk_usdt:,.2f} USDT")
-            self.store.log(text)
             if self.mode == "auto":
-                self.notify(text)
+                self.notify(text)  # notify() сам пишет событие
+            else:
+                self.store.log(text)
             return text
 
     def close(self, coin: str, reason: str) -> str:
@@ -361,6 +363,19 @@ class Bot:
                         self.notify(f"⚠️ {p.coin}: стоп-ордер пропал — поставил заново на {fmt(p.stop)}")
 
     # --- отчёты ----------------------------------------------------------------
+    def chart(self, coin: str, bars: int = 150) -> dict:
+        """Свечи с EMA для графика в мини-приложении."""
+        df = self.ex.candles(self.symbol(coin), "4h", 1000)
+        data = bt.prepare(df, self.params).iloc[-bars:]
+        nan_to_none = lambda col: [None if pd.isna(v) else round(float(v), 10) for v in data[col]]  # noqa: E731
+        p = self.store.position(coin)
+        return {
+            "coin": coin,
+            "time": [int(t.timestamp()) for t in data.index],
+            **{k: nan_to_none(k) for k in ("open", "high", "low", "close", "ema_fast", "ema_slow", "atr")},
+            "position": p.__dict__ if p else None,
+        }
+
     def status(self) -> dict:
         eq = self.equity()
         positions = []

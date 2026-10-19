@@ -447,3 +447,90 @@ def test_api_requires_token(make_bot):
         assert bot.mode == "auto"
     finally:
         server.shutdown()
+
+
+# --- мини-приложение Telegram ---------------------------------------------------------
+
+from urllib.parse import urlencode  # noqa: E402
+
+from tradetrust.bot import webapp_auth  # noqa: E402
+
+
+def init_data(user_id=42, token="123:ABC", age=0, **extra):
+    fields = {"auth_date": str(int(pd.Timestamp.now(tz="UTC").timestamp()) - age), "query_id": "AAH",
+              "user": json.dumps({"id": user_id, "first_name": "Ann"}, separators=(",", ":")), **extra}
+    fields["hash"] = webapp_auth.sign(fields, token)
+    return urlencode(fields)
+
+
+def test_webapp_auth_accepts_owner_only():
+    assert webapp_auth.validate(init_data(), "123:ABC", "42")["id"] == 42
+    assert webapp_auth.validate(init_data(user_id=7), "123:ABC", "42") is None      # чужой пользователь
+    assert webapp_auth.validate(init_data(token="999:X"), "123:ABC", "42") is None   # подписано другим ботом
+    assert webapp_auth.validate(init_data(age=3 * 86400), "123:ABC", "42") is None   # устарело
+    tampered = init_data().replace("Ann", "Bob")
+    assert webapp_auth.validate(tampered, "123:ABC", "42") is None
+    assert webapp_auth.validate("", "123:ABC", "42") is None
+
+
+def test_webapp_auth_includes_signature_field():
+    # Telegram добавляет поле signature; в проверку HMAC оно входит как обычное поле
+    assert webapp_auth.validate(init_data(signature="abc"), "123:ABC", "42") is not None
+
+
+def test_miniapp_served_and_api_uses_telegram_auth(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    server = api.serve(bot, "", 0, tg_token="123:ABC", owner_id="42")
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        html = urllib.request.urlopen(base + "/").read().decode()
+        assert "telegram-web-app.js" in html and "app.js" in html
+        js = urllib.request.urlopen(base + "/app.js")
+        assert "javascript" in js.headers["Content-Type"]
+        with pytest.raises(HTTPError) as e:
+            urllib.request.urlopen(base + "/../config.py")
+        assert e.value.code == 404
+
+        def get(path, auth):
+            return urllib.request.urlopen(urllib.request.Request(base + path, headers={"Authorization": auth}))
+
+        with pytest.raises(HTTPError) as e:
+            get("/api/status", "tma " + init_data(user_id=7))
+        assert e.value.code == 401
+        with pytest.raises(HTTPError) as e:  # пустой API_TOKEN не открывает доступ
+            get("/api/status", "Bearer ")
+        assert e.value.code == 401
+        status = json.loads(get("/api/status", "tma " + init_data()).read())
+        assert status["proposals"][0]["coin"] == "SOL"
+        chart = json.loads(get("/api/candles?coin=SOL", "tma " + init_data()).read())
+        assert len(chart["time"]) == len(chart["close"]) > 10 and chart["position"] is None
+    finally:
+        server.shutdown()
+
+
+def test_each_purchase_logged_once(make_bot):
+    for mode in ("confirm", "auto"):
+        bot, ex, rec = make_bot(mode)
+        ex.set("SOL", cross_on_last_bar())
+        bot.on_candle_close()
+        if mode == "confirm":
+            bot.confirm(rec.sent[-1][1][0][0][1].split(":")[1])
+        bought = [e for e in bot.store.events() if e["text"].startswith("✅ Куплено")]
+        assert len(bought) == 1, (mode, bought)
+        bot.store.db.execute("DELETE FROM events"); bot.store.db.execute("DELETE FROM positions")
+        bot.store.db.execute("DELETE FROM kv")
+
+
+def test_app_command_sends_webapp_button(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    tg = FakeTelegram()
+    tg.webapp_url = "https://1-2-3-4.sslip.io"
+    tg.bot = bot
+    tg.handle({"update_id": 5, "message": {"chat": {"id": 42}, "text": "/app"}})
+    markup = tg.calls[-1][1]["reply_markup"]["inline_keyboard"][0][0]
+    assert markup["web_app"]["url"] == "https://1-2-3-4.sslip.io"
+    tg.setup()
+    menu = [p for m, p in tg.calls if m == "setChatMenuButton"][0]
+    assert menu["menu_button"]["web_app"]["url"] == "https://1-2-3-4.sslip.io" and menu["chat_id"] == 42

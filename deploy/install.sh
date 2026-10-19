@@ -70,7 +70,7 @@ PY
     1) set_env MODE signals ;; 3) set_env MODE auto ;; *) set_env MODE confirm ;;
   esac
 
-  echo "Telegram: создайте бота у @BotFather и вставьте токен (Enter — пропустить)."
+  echo "Telegram: создайте бота у @BotFather и вставьте токен — через него работают уведомления и мини-приложение."
   tg=$(ask 'Токен: ')
   if [ -n "$tg" ]; then
     set_env TELEGRAM_TOKEN "$tg"
@@ -107,7 +107,9 @@ echo "Настройки:   nano $DIR/.env, затем: docker compose up -d"
 echo "Обновление:  повторно запустите этот скрипт"
 if [ -n "${DOMAIN:-}" ]; then
   echo
-  echo "Для приложения TradeTrust (вкладка «Бот» → настройки):"
-  echo "  Адрес сервера: https://$DOMAIN"
-  echo "  Токен:         $API_TOKEN"
+  echo "Мини-приложение: откройте своего бота в Telegram — кнопка «Открыть» слева от поля ввода"
+  echo "  (или команда /app). Адрес: https://$DOMAIN"
+  echo "  Первый запуск: сертификат HTTPS выпускается ~1 минуту; порты 80 и 443 должны быть открыты у хостера."
+  echo
+  echo "Android-приложение (вкладка «Бот»): адрес https://$DOMAIN, токен $API_TOKEN"
 fi

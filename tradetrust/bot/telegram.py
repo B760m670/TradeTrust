@@ -16,6 +16,7 @@ from .engine import Bot, fmt
 log = logging.getLogger("tradetrust.telegram")
 
 HELP = """Команды:
+/app — открыть приложение
 /status — баланс, режим, позиции
 /signals — что система видит на последней свече
 /trades — последние сделки
@@ -29,9 +30,10 @@ MODE_NAMES = {"signals": "только сигналы", "confirm": "с подт�
 
 
 class Telegram:
-    def __init__(self, token: str, chat_id: str, session: requests.Session | None = None):
+    def __init__(self, token: str, chat_id: str, webapp_url: str = "", session: requests.Session | None = None):
         self.url = f"https://api.telegram.org/bot{token}"
         self.chat_id = str(chat_id)
+        self.webapp_url = webapp_url
         self.http = session or requests.Session()
         self.bot: Bot | None = None
         self.offset = 0
@@ -47,16 +49,42 @@ class Telegram:
     def send(self, text: str, buttons=None) -> int | None:
         params = {"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True}
         if buttons:
-            params["reply_markup"] = {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row]
-                                                          for row in buttons]}
+            params["reply_markup"] = {"inline_keyboard": [[self._button(t, d) for t, d in row] for row in buttons]}
         return self._call("sendMessage", **params)["message_id"]
+
+    @staticmethod
+    def _button(text: str, data: str) -> dict:
+        # "url:https://..." — кнопка, открывающая мини-приложение; иначе callback-кнопка
+        if data.startswith("url:"):
+            return {"text": text, "web_app": {"url": data[4:]}}
+        return {"text": text, "callback_data": data}
 
     def edit(self, message_id: int, text: str) -> None:
         self._call("editMessageText", chat_id=self.chat_id, message_id=message_id, text=text)
 
     # --- входящие ------------------------------------------------------------
+    def setup(self) -> None:
+        """Список команд и кнопка «Открыть» слева от поля ввода."""
+        self._call("setMyCommands", commands=[
+            {"command": "app", "description": "Открыть приложение"},
+            {"command": "status", "description": "Баланс и позиции"},
+            {"command": "signals", "description": "Сигналы по монетам"},
+            {"command": "trades", "description": "Последние сделки"},
+            {"command": "mode", "description": "Режим: signals / confirm / auto"},
+            {"command": "pause", "description": "Не открывать новые сделки"},
+            {"command": "resume", "description": "Снять паузу"},
+            {"command": "help", "description": "Все команды"},
+        ])
+        if self.webapp_url:
+            self._call("setChatMenuButton", chat_id=int(self.chat_id),
+                       menu_button={"type": "web_app", "text": "Открыть", "web_app": {"url": self.webapp_url}})
+
     def start(self, bot: Bot) -> threading.Thread:
         self.bot = bot
+        try:
+            self.setup()
+        except Exception:
+            log.exception("telegram setup")
         t = threading.Thread(target=self._loop, name="telegram", daemon=True)
         t.start()
         return t
@@ -103,8 +131,11 @@ class Telegram:
         bot = self.bot
         cmd, *args = text.split() or [""]
         cmd = cmd.split("@")[0].lower()
-        if cmd in ("/start", "/help"):
-            return HELP
+        if cmd in ("/start", "/help", "/app"):
+            if self.webapp_url:
+                self.send("TradeTrust" if cmd == "/app" else HELP, [[("📊 Открыть приложение", f"url:{self.webapp_url}")]])
+                return None
+            return HELP if cmd != "/app" else "Мини-приложение недоступно: не задан DOMAIN в .env"
         if cmd == "/status":
             return self.status_text()
         if cmd == "/signals":

@@ -41,8 +41,13 @@ class Config:
     telegram_chat_id: str = ""
     api_token: str = ""
     api_port: int = 8080
+    domain: str = ""                   # адрес сервера для мини-приложения: https://<domain>
     db_path: str = "bot.db"
     paper_start_usdt: float = 1000.0
+
+    @property
+    def webapp_url(self) -> str:
+        return f"https://{self.domain}" if self.domain else ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -68,6 +73,7 @@ class Config:
             telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
             api_token=_env("API_TOKEN"),
             api_port=int(_float("API_PORT", 8080)),
+            domain=_env("DOMAIN").removeprefix("https://").strip("/"),
             db_path=_env("DB_PATH", "bot.db"),
             paper_start_usdt=_float("PAPER_START_USDT", 1000.0),
         )

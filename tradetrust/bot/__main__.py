@@ -25,12 +25,12 @@ def build(cfg: Config) -> Bot:
         client = BybitClient(cfg.env, cfg.api_key, cfg.api_secret, base_url=cfg.base_url or None)
         exchange = BybitExchange(client)
     client.sync_time()
-    notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id) if cfg.telegram_token else None
+    notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id, cfg.webapp_url) if cfg.telegram_token else None
     bot = Bot(cfg, exchange, store, notifier)
     if notifier:
         notifier.start(bot)
-    if cfg.api_token:
-        api.serve(bot, cfg.api_token, cfg.api_port)
+    # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
+    api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id)
     return bot
 
 
