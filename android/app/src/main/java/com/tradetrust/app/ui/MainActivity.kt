@@ -11,7 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -45,7 +46,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(val title: String) { SIGNALS("Сигналы"), JOURNAL("Журнал"), SETTINGS("Настройки") }
+private enum class Tab(val title: String) { SIGNALS("Сигналы"), BOT("Бот"), JOURNAL("Журнал"), SETTINGS("Настройки") }
 
 @Composable
 private fun App(vm: AppViewModel = viewModel()) {
@@ -69,6 +70,7 @@ private fun App(vm: AppViewModel = viewModel()) {
     }
 
     Scaffold(
+        topBar = { UpdateBanner() },
         bottomBar = {
             NavigationBar {
                 Tab.entries.forEach { t ->
@@ -77,7 +79,8 @@ private fun App(vm: AppViewModel = viewModel()) {
                         onClick = { tab = t },
                         icon = {
                             Icon(when (t) {
-                                Tab.SIGNALS -> Icons.Filled.List
+                                Tab.SIGNALS -> Icons.AutoMirrored.Filled.List
+                                Tab.BOT -> Icons.Filled.PlayArrow
                                 Tab.JOURNAL -> Icons.Filled.Edit
                                 Tab.SETTINGS -> Icons.Filled.Settings
                             }, contentDescription = null)
@@ -91,6 +94,7 @@ private fun App(vm: AppViewModel = viewModel()) {
         val m = Modifier.padding(pad)
         when (tab) {
             Tab.SIGNALS -> SignalsScreen(scan, settings, m, onRefresh = vm::refresh, onOpen = { openCoin = it })
+            Tab.BOT -> BotScreen(m)
             Tab.JOURNAL -> JournalScreen(journal, draft, m, onDraftConsumed = { draft = null },
                 onSave = vm::upsertTrade, onDelete = vm::deleteTrade, csv = vm::journalCsv)
             Tab.SETTINGS -> SettingsScreen(settings, m, onSave = vm::saveSettings)

@@ -20,6 +20,7 @@ import androidx.work.WorkerParameters
 import com.tradetrust.app.R
 import com.tradetrust.app.data.Scanner
 import com.tradetrust.app.data.SettingsStore
+import com.tradetrust.app.data.Updater
 import com.tradetrust.app.engine.Action
 import com.tradetrust.app.ui.MainActivity
 import java.util.concurrent.TimeUnit
@@ -32,6 +33,7 @@ class SignalWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result {
         val store = SettingsStore(applicationContext)
+        checkUpdate(store)
         val settings = store.load()
         if (!settings.notifications) return Result.success()
         val scan = runCatching { Scanner.scan(settings) }.getOrElse { return Result.retry() }
@@ -45,6 +47,15 @@ class SignalWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             store.markNotified(key)
         }
         return Result.success()
+    }
+
+    private suspend fun checkUpdate(store: SettingsStore) {
+        val info = runCatching { Updater.check() }.getOrNull() ?: return
+        val key = "update:${info.versionCode}"
+        if (store.wasNotified(key)) return
+        notify(applicationContext, "Доступно обновление TradeTrust",
+            "Версия ${info.versionCode}. Откройте приложение и нажмите «Обновить».", key.hashCode())
+        store.markNotified(key)
     }
 
     companion object {

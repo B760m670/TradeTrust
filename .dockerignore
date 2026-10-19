@@ -1,0 +1,8 @@
+.git
+android
+data
+reports
+botdata
+tests
+.env
+**/__pycache__

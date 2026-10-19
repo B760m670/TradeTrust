@@ -27,6 +27,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tradetrust.app.data.AppSettings
 import com.tradetrust.app.data.Scanner
+import com.tradetrust.app.data.Updater
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun SettingsScreen(settings: AppSettings, modifier: Modifier, onSave: (AppSettings) -> Unit) {
@@ -84,6 +87,18 @@ fun SettingsScreen(settings: AppSettings, modifier: Modifier, onSave: (AppSettin
         }
         if (parsed == null) Text("Проверьте значения: числа больше нуля, быстрая EMA меньше медленной.",
             color = Down, style = MaterialTheme.typography.bodySmall)
+
+        val update = viewModel<UpdateViewModel>()
+        val us by update.state.collectAsStateWithLifecycle()
+        Text("Приложение", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Версия ${Updater.currentVersion}", modifier = Modifier.weight(1f))
+            TextButton(enabled = !us.checking, onClick = { update.check(manual = true) }) {
+                Text(if (us.checking) "Проверяю…" else "Проверить обновления")
+            }
+        }
+        us.lastCheckMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 

@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -47,4 +47,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: TradeTrust ${{ github.run_number }}
+          # первая строка описания показывается в приложении на плашке обновления
+          body: ${{ github.event.head_commit.message }}
           files: android/TradeTrust-${{ github.run_number }}.apk
