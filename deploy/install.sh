@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Установка TradeTrust-бота на Ubuntu/Debian.
 #   curl -fsSL https://raw.githubusercontent.com/B760m670/TradeTrust/main/deploy/install.sh | sudo bash
-# Повторный запуск обновляет код и перезапускает бота, настройки (.env) сохраняются.
+# Повторный запуск обновляет бота, настройки (.env) сохраняются.
+#
+# Уживается с тем, что уже работает на сервере: порты 80/443 не занимает. Если там уже есть
+# Caddy (сайт, панель VPN), бот добавляется в него отдельным блоком — с резервной копией
+# и проверкой конфигурации. Образ скачивается готовым, на сервере ничего не собирается.
 set -euo pipefail
 
 REPO="https://github.com/B760m670/TradeTrust.git"
@@ -86,30 +90,90 @@ print(ids[-1] if ids else "")')
 
   ip=$(curl -s -m 10 https://api.ipify.org || true)
   set_env API_TOKEN "$(openssl rand -hex 24)"
-  [ -n "$ip" ] && set_env DOMAIN "${ip//./-}.sslip.io"
+  echo "Адрес мини-приложения. Можно свой поддомен (например bot.example.com — его A-запись должна"
+  echo "указывать на этот сервер) или Enter — бесплатный адрес ${ip//./-}.sslip.io без настройки DNS."
+  domain=$(ask "Адрес [${ip//./-}.sslip.io]: ")
+  domain=${domain#https://}; domain=${domain%%/*}
+  [ -z "$domain" ] && [ -n "$ip" ] && domain="${ip//./-}.sslip.io"
+  [ -n "$domain" ] && set_env DOMAIN "$domain"
   chmod 600 .env
 fi
 
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q active; then
-  ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null
+env_get() { grep -m1 "^$1=" .env | cut -d= -f2- || true; }
+port_busy() { ss -Htln "sport = :$1" | grep -q .; }
+is_ours() { docker compose ps -q bot 2>/dev/null | grep -q . && docker compose port bot 8080 2>/dev/null | grep -q ":$1$"; }
+
+# Внутренний порт бота (только 127.0.0.1): берём первый свободный, начиная с 8090.
+BOT_PORT=$(env_get BOT_PORT)
+if [ -z "$BOT_PORT" ]; then
+  BOT_PORT=8090
+  while port_busy "$BOT_PORT"; do BOT_PORT=$((BOT_PORT + 1)); done
+  printf '\nBOT_PORT=%s\n' "$BOT_PORT" >> .env
+elif port_busy "$BOT_PORT" && ! is_ours "$BOT_PORT"; then
+  echo "❌ Порт $BOT_PORT (BOT_PORT в .env) занят другим процессом. Укажите свободный и запустите снова."
+  exit 1
+fi
+DOMAIN=$(env_get DOMAIN)
+
+PROFILE=""
+CADDYFILE=/etc/caddy/Caddyfile
+if systemctl is-active --quiet caddy && [ -f "$CADDYFILE" ] && [ -n "$DOMAIN" ]; then
+  if grep -q "# tradetrust-begin" "$CADDYFILE"; then
+    echo "Caddy уже настроен для бота."
+  else
+    say "На сервере работает Caddy — добавлю в него адрес бота"
+    block=$(printf '\n# tradetrust-begin (TradeTrust bot, добавлено установщиком)\n%s {\n\treverse_proxy 127.0.0.1:%s\n}\n# tradetrust-end\n' "$DOMAIN" "$BOT_PORT")
+    echo "В конец $CADDYFILE будет добавлено:"; echo "$block"
+    case "$(ask 'Добавить? [Y/n]: ')" in n|N|н|Н) echo "Пропускаю. Настройте прокси на 127.0.0.1:$BOT_PORT вручную."; block="" ;; esac
+    if [ -n "$block" ]; then
+      backup="$CADDYFILE.bak-tradetrust-$(date +%Y%m%d-%H%M%S)"
+      cp "$CADDYFILE" "$backup"
+      printf '%s\n' "$block" >> "$CADDYFILE"
+      if caddy validate --config "$CADDYFILE" --adapter caddyfile >/tmp/tradetrust-caddy.log 2>&1; then
+        systemctl reload caddy
+        echo "✅ Caddy перезагружен. Резервная копия: $backup"
+      else
+        cp "$backup" "$CADDYFILE"
+        echo "❌ Caddy не принял конфигурацию — вернул как было. Подробности: /tmp/tradetrust-caddy.log"
+        echo "   Бот запустится, но мини-приложение будет недоступно, пока не настроите прокси на 127.0.0.1:$BOT_PORT."
+      fi
+    fi
+  fi
+elif ! port_busy 80 && ! port_busy 443; then
+  PROFILE="--profile caddy"  # чистый сервер — свой Caddy с HTTPS
+  if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+    ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null
+  fi
+else
+  echo "⚠️  Порты 80/443 заняты не Caddy. Бот слушает 127.0.0.1:$BOT_PORT — выведите его наружу"
+  echo "   своим веб-сервером по HTTPS на адрес $DOMAIN (для мини-приложения нужен HTTPS)."
 fi
 
-say "Запускаю…"
-docker compose up -d --build
+say "Скачиваю и запускаю бота…"
+if ! docker compose pull -q bot; then
+  avail_mb=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+  if [ "$avail_mb" -lt 1500 ]; then
+    echo "❌ Не удалось скачать готовый образ, а для сборки на месте мало памяти (свободно ${avail_mb} МБ)."
+    echo "   Сборка может задеть другие сервисы на сервере. Попробуйте позже или напишите мне."
+    exit 1
+  fi
+  docker compose build bot
+fi
+# shellcheck disable=SC2086
+docker compose $PROFILE up -d
 sleep 5
 docker compose logs --tail 20 bot
 
-DOMAIN=$(grep -m1 '^DOMAIN=' .env | cut -d= -f2-)
-API_TOKEN=$(grep -m1 '^API_TOKEN=' .env | cut -d= -f2-)
+API_TOKEN=$(env_get API_TOKEN)
 say "Готово."
 echo "Логи:        cd $DIR && docker compose logs -f bot"
-echo "Настройки:   nano $DIR/.env, затем: docker compose up -d"
+echo "Настройки:   nano $DIR/.env, затем: cd $DIR && docker compose up -d"
 echo "Обновление:  повторно запустите этот скрипт"
 if [ -n "${DOMAIN:-}" ]; then
   echo
   echo "Мини-приложение: откройте своего бота в Telegram — кнопка «Открыть» слева от поля ввода"
   echo "  (или команда /app). Адрес: https://$DOMAIN"
-  echo "  Первый запуск: сертификат HTTPS выпускается ~1 минуту; порты 80 и 443 должны быть открыты у хостера."
+  echo "  Первый запуск: сертификат HTTPS выпускается около минуты."
   echo
   echo "Android-приложение (вкладка «Бот»): адрес https://$DOMAIN, токен $API_TOKEN"
 fi
