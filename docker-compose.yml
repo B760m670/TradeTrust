@@ -1,20 +1,30 @@
 services:
   bot:
+    # Готовый образ собирает GitHub Actions — на сервере ничего не компилируется.
+    # build: . остаётся запасным вариантом: docker compose build bot
+    image: ghcr.io/b760m670/tradetrust:latest
     build: .
     env_file: .env
     environment:
       DB_PATH: /data/bot.db
+    # Только для самого сервера: наружу бота выводит веб-сервер (Caddy) по HTTPS.
+    ports:
+      - "127.0.0.1:${BOT_PORT:-8090}:8080"
     volumes:
       - ./botdata:/data
+    # Чтобы бот никогда не отнял память у других сервисов на сервере.
+    mem_limit: 400m
     restart: unless-stopped
     logging:
       options:
         max-size: "10m"
         max-file: "3"
 
-  # HTTPS для Android-приложения. Сертификат Let's Encrypt выпускается автоматически.
+  # Собственный Caddy — только для чистого сервера, где порты 80 и 443 свободны:
+  # docker compose --profile caddy up -d
   caddy:
     image: caddy:2.8.4
+    profiles: ["caddy"]
     ports:
       - "80:80"
       - "443:443"
