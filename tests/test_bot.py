@@ -478,17 +478,32 @@ def test_webapp_auth_includes_signature_field():
     assert webapp_auth.validate(init_data(signature="abc"), "123:ABC", "42") is not None
 
 
-def test_miniapp_served_and_api_uses_telegram_auth(make_bot):
+def test_miniapp_not_built_message(make_bot, tmp_path):
+    bot, _, _ = make_bot("confirm")
+    server = api.serve(bot, "", 0, web_dir=tmp_path)
+    try:
+        with pytest.raises(HTTPError) as e:
+            urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/")
+        assert e.value.code == 503 and "npm run build" in e.value.read().decode()
+    finally:
+        server.shutdown()
+
+
+def test_miniapp_served_and_api_uses_telegram_auth(make_bot, tmp_path):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text('<script src="https://telegram.org/js/telegram-web-app.js"></script>'
+                                         '<script type="module" src="./assets/index-abc.js"></script>')
+    (tmp_path / "assets" / "index-abc.js").write_text("console.log(1)")
     bot, ex, _ = make_bot("confirm")
     ex.set("SOL", cross_on_last_bar())
     bot.on_candle_close()
-    server = api.serve(bot, "", 0, tg_token="123:ABC", owner_id="42")
+    server = api.serve(bot, "", 0, tg_token="123:ABC", owner_id="42", web_dir=tmp_path)
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         html = urllib.request.urlopen(base + "/").read().decode()
-        assert "telegram-web-app.js" in html and "app.js" in html
-        js = urllib.request.urlopen(base + "/app.js")
-        assert "javascript" in js.headers["Content-Type"]
+        assert "telegram-web-app.js" in html
+        js = urllib.request.urlopen(base + "/assets/index-abc.js")
+        assert "javascript" in js.headers["Content-Type"] and "immutable" in js.headers["Cache-Control"]
         with pytest.raises(HTTPError) as e:
             urllib.request.urlopen(base + "/../config.py")
         assert e.value.code == 404

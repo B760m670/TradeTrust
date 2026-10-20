@@ -1,4 +1,4 @@
-"""HTTP: мини-приложение Telegram (статические файлы из web/) и JSON API.
+"""HTTP: мини-приложение Telegram (сборка miniapp/ в web/) и JSON API.
 
 Доступ к /api/* — одним из двух способов:
   * Authorization: tma <initData>   — мини-приложение, подпись Telegram, только владелец бота;
@@ -24,7 +24,13 @@ log = logging.getLogger("tradetrust.api")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
-def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = ""):
+NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложение не собрано: "
+             "<code>cd miniapp &amp;&amp; npm ci &amp;&amp; npm run build</code></p>").encode()
+
+
+def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR):
+    web_dir = web_dir.resolve()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             log.debug("%s %s", self.address_string(), fmt % args)
@@ -40,8 +46,13 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = ""):
 
         def _static(self, path: str) -> None:
             name = "index.html" if path in ("", "/") else path.lstrip("/")
-            file = (WEB_DIR / name).resolve()
-            if not file.is_file() or WEB_DIR not in file.parents:
+            file = (web_dir / name).resolve()
+            if name == "index.html" and not file.is_file():
+                self.send_response(503)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                return self.wfile.write(NOT_BUILT)
+            if not file.is_file() or web_dir not in file.parents:
                 return self._send(404, {"error": "not found"})
             body = file.read_bytes()
             self.send_response(200)
@@ -49,7 +60,9 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = ""):
             self.send_header("Content-Type", ctype + ("; charset=utf-8" if ctype.startswith("text/") or
                                                       ctype.endswith("javascript") else ""))
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
+            # файлы в assets/ с хешем в имени — их можно кешировать надолго
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable" if name.startswith("assets/")
+                             else "no-cache")
             self.end_headers()
             self.wfile.write(body)
 
@@ -117,8 +130,9 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = ""):
     return Handler
 
 
-def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "") -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id))
+def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
+          web_dir: Path = WEB_DIR) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

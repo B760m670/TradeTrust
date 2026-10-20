@@ -103,7 +103,9 @@ python -m pytest
 - «Сигналы» — 25 монет, у каждой карточка со свечным графиком, EMA, стопом и планом сделки;
 - «Журнал» — статистика (прибыльные, итог, средний R, profit factor), сделки и события.
 
-Мини-приложение раздаёт сам бот (`tradetrust/bot/web/`). Вход — по подписи Telegram (`initData`), пускает только
+Мини-приложение — `miniapp/`: TypeScript, React, компоненты Telegram UI, графики TradingView Lightweight Charts.
+Docker собирает его при установке, а раздаёт сам бот. Локально: `cd miniapp && npm ci && npm test && npm run build`.
+Вход — по подписи Telegram (`initData`), пускает только
 владельца бота (`TELEGRAM_CHAT_ID`). Свой домен не нужен: HTTPS выдаётся на `<ip>.sslip.io`.
 
 **Режимы** (`MODE`, меняются командой `/mode` или в мини-приложении):
