@@ -92,6 +92,8 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
             try:
                 if url.path == "/api/status":
                     return self._send(200, bot.status())
+                if url.path == "/api/portfolio":
+                    return self._send(200, bot.portfolio())
                 if url.path == "/api/candles":
                     coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
                     if coin not in bot.watched_coins():

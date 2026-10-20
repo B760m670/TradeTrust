@@ -436,6 +436,31 @@ button.card { text-align: left; width: 100%; }
 .equity-foot strong.tone-down { color: var(--down); }
 .field.disabled { opacity: 0.45; pointer-events: none; }
 
+/* ---------- портфель ---------- */
+.portfolio-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.portfolio-grid .card + .card { margin-top: 0; }
+.app.wide .portfolio-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+.alloc-bar { display: flex; gap: 2px; height: 14px; margin-top: 6px; }
+.alloc-bar span { flex: 0 0 var(--w); min-width: 3px; border-radius: 3px; transform-origin: left;
+  animation: grow 0.9s var(--ease) both; }
+.alloc-bar span:first-child { border-radius: 7px 3px 3px 7px; }
+.alloc-bar span:last-child { border-radius: 3px 7px 7px 3px; }
+.alloc-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px 16px; margin: 0;
+  padding: 0; list-style: none; font-size: 13px; }
+.alloc-legend li { display: flex; align-items: center; gap: 8px; }
+.alloc-legend i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.alloc-legend span { flex-grow: 1; color: var(--muted); }
+.asset-row { display: grid; grid-template-columns: minmax(0, 1.5fr) auto; align-items: center; gap: 12px; padding: 10px 8px;
+  animation: rise 0.4s var(--ease) both; animation-delay: calc(min(var(--i, 0), 20) * 22ms); }
+.asset-row + .asset-row { box-shadow: 0 -1px 0 var(--border); }
+.asset-head { padding: 8px; font-size: 12px; font-weight: 600; color: var(--faint); animation: none; }
+.asset-value { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.asset-value .flash { align-self: flex-end; }
+.asset-head > :nth-child(4) { text-align: right; }
+.asset-row .chip { margin-left: 6px; padding: 2px 8px; font-size: 11px; vertical-align: middle; }
+.app.wide .asset-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.6fr); }
+.assets-card .col-wide:last-child { text-align: right; }
+
 /* ---------- анимации ---------- */
 @keyframes screen-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

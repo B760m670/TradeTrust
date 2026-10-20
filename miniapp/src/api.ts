@@ -120,6 +120,22 @@ export interface ChartData {
   position: { entry: number; stop: number; qty: number } | null;
 }
 
+export interface Asset {
+  coin: string;
+  qty: number;
+  price: number | null; // null — у монеты нет пары к USDT
+  value: number | null;
+  bot_qty: number;      // сколько из этого куплено ботом
+  stable: boolean;
+}
+
+export interface Portfolio {
+  total: number;
+  assets: Asset[];
+  updated_at: number;
+  bot: { capital: number; invested: number; free: number };
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -144,6 +160,7 @@ type Message = { message: string };
 
 export const api = {
   status: () => request<Status>("/api/status"),
+  portfolio: () => request<Portfolio>("/api/portfolio"),
   chart: (coin: string) => request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}`),
   confirm: (id: string) => request<Message>(`/api/proposals/${id}/confirm`, "POST"),
   reject: (id: string) => request<Message>(`/api/proposals/${id}/reject`, "POST"),

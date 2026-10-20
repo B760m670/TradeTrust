@@ -9,6 +9,15 @@ vi.mock("./components/CandleChart", () => ({
 }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
 
+const PORTFOLIO = {
+  total: 1500, updated_at: 0, bot: { capital: 1000, invested: 47, free: 942 },
+  assets: [
+    { coin: "USDT", qty: 1000, price: 1, value: 1000, bot_qty: 0, stable: true },
+    { coin: "SOL", qty: 4.5, price: 100, value: 450, bot_qty: 0.457, stable: false },
+    { coin: "TON", qty: 10, price: 5, value: 50, bot_qty: 0, stable: false },
+  ],
+};
+
 class FakeWebSocket {
   static last: FakeWebSocket | null = null;
   readyState = 0;
@@ -53,6 +62,7 @@ beforeEach(() => {
     calls.push({ url, method: init.method ?? "GET", auth: new Headers(init.headers).get("Authorization"),
       body: init.body ? JSON.parse(init.body as string) : undefined });
     const body = url === "/api/status" ? status
+      : url === "/api/portfolio" ? PORTFOLIO
       : url.startsWith("/api/candles") ? { coin: "SOL", time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
     return new Response(JSON.stringify(body), { status: 200 });
@@ -191,5 +201,18 @@ describe("mini app", () => {
     fireEvent.click(await screen.findByRole("switch", { name: "Ежедневная сводка" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ daily_report: false }));
+  });
+
+  it("shows the whole account in the portfolio with live prices", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Портфель" }));
+    await screen.findByText("Кто управляет");
+    expect(calls.some((c) => c.url === "/api/portfolio" && c.auth === "tma query_id=1&hash=abc")).toBe(true);
+    expect(screen.getByText("частично бот")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /USDT 66,7%, SOL 30,0%, TON 3,3%/ })).toBeTruthy();
+    await waitFor(() => expect(FakeWebSocket.last?.sent.flatMap((m) => m.args ?? [])).toContain("tickers.TONUSDT"));
+    act(() => FakeWebSocket.last!.push("tickers.TONUSDT", { lastPrice: "10", price24hPcnt: "1" }));
+    await screen.findByText("100,00 $", {}, { timeout: 2000 }); // 10 TON × 10 $
+    expect(screen.getByText("+50,00 $ · +3,3%")).toBeTruthy(); // TON удвоился: +50 $ к прежним 1500 $
   });
 });

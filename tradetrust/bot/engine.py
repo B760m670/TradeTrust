@@ -114,6 +114,7 @@ def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) ->
     return out
 
 
+STABLES = {"USDT", "USDC", "FDUSD", "DAI", "USDE"}
 MODE_NAMES = {"signals": "только сигналы", "confirm": "с подтверждением", "auto": "автоматически"}
 
 
@@ -293,6 +294,35 @@ class Bot:
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
             self.record_equity()
+
+    # --- портфель: весь счёт, а не только часть бота ---------------------------
+    def portfolio(self) -> dict:
+        positions = {p.coin: p for p in self.store.positions()}
+        assets = []
+        for coin, h in self.ex.holdings().items():
+            qty = h["qty"]
+            if qty <= 0:
+                continue
+            if coin in STABLES:
+                price = 1.0
+            elif h.get("usd"):
+                price = h["usd"] / qty
+            else:
+                try:
+                    price = self.ex.last_price(self.symbol(coin))
+                except Exception:  # монета без пары к USDT — покажем количество без цены
+                    price = None
+            value = qty * price if price is not None else None
+            if value is not None and value < 0.01:
+                continue  # пыль после сделок
+            bot_qty = min(qty, positions[coin].qty) if coin in positions else 0.0
+            assets.append({"coin": coin, "qty": qty, "price": price, "value": value, "bot_qty": bot_qty,
+                           "stable": coin in STABLES})
+        assets.sort(key=lambda a: -(a["value"] or 0))
+        total = sum(a["value"] or 0 for a in assets)
+        eq = self.equity()
+        return {"total": total, "assets": assets, "updated_at": now(),
+                "bot": {"capital": eq["total"], "invested": eq["invested"], "free": eq["free"]}}
 
     # --- капитал во времени и ежедневный отчёт ---------------------------------
     def record_equity(self) -> None:

@@ -193,3 +193,38 @@ export function localTime(hourUtc: number, offsetMin: number): string {
   const m = (((hourUtc * 60 + offsetMin) % 1440) + 1440) % 1440;
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
+
+export interface Slice {
+  key: string;
+  label: string;
+  value: number;
+  share: number; // доля 0..100
+}
+
+/** Распределение портфеля: крупнейшие активы по отдельности, остальное — «Другие». */
+export function allocation(assets: { coin: string; value: number | null }[], top = 5): Slice[] {
+  const priced = assets.filter((a) => a.value && a.value > 0) as { coin: string; value: number }[];
+  const total = priced.reduce((s, a) => s + a.value, 0);
+  if (total <= 0) return [];
+  const sorted = [...priced].sort((a, b) => b.value - a.value);
+  const head = sorted.length > top + 1 ? sorted.slice(0, top) : sorted;
+  const rest = sorted.slice(head.length).reduce((s, a) => s + a.value, 0);
+  const slices = head.map((a) => ({ key: a.coin, label: a.coin, value: a.value, share: (a.value / total) * 100 }));
+  if (rest > 0) slices.push({ key: "other", label: "Другие", value: rest, share: (rest / total) * 100 });
+  return slices;
+}
+
+/** Изменение стоимости за 24 ч по изменениям цен монет (стейблкоины не меняются). */
+export function dayChange(assets: { coin: string; value: number | null; stable: boolean }[],
+  changes: Record<string, number | undefined>): { usd: number; pct: number } | null {
+  let usd = 0, total = 0, known = false;
+  for (const a of assets) {
+    if (!a.value) continue;
+    total += a.value;
+    const ch = changes[a.coin];
+    if (a.stable || ch == null) continue;
+    known = true;
+    usd += a.value - a.value / (1 + ch / 100);
+  }
+  return known && total - usd > 0 ? { usd, pct: (usd / (total - usd)) * 100 } : null;
+}
