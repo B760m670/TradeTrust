@@ -4,9 +4,10 @@ import type { Tab } from "../App";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon } from "../components/icons";
-import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, RangeBar, Tile, Value } from "../components/ui";
+import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Tile, Value } from "../components/ui";
 import { clock, dateTime, pct, price, tone, usd } from "../format";
 import { useNow } from "../hooks";
+import { useLiveTickers } from "../live";
 import { nextCandleClose, signalRows, stopRisk } from "../logic";
 
 interface Props {
@@ -77,7 +78,7 @@ function SignalsPanel({ status: s, onOpenCoin, onTab, limit }: {
           <button key={coin} className="list-row tappable" style={stagger(i)} onClick={() => onOpenCoin(coin)}>
             <span className={`dot dot-${state.tone}`} />
             <strong className="list-coin">{coin}</strong>
-            <span className="muted num">{signal.error ? "—" : price(signal.price)}</span>
+            <Flash value={signal.price} className="muted num">{signal.error ? "—" : price(signal.price)}</Flash>
             <Chip tone={state.tone}>{state.label}</Chip>
           </button>
         ))}
@@ -92,6 +93,7 @@ function SignalsPanel({ status: s, onOpenCoin, onTab, limit }: {
 
 export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Props) {
   const now = useNow();
+  const live = Object.keys(useLiveTickers()).length > 0;
   const risk = stopRisk(s.positions);
   const riskPct = s.equity.total ? (risk / s.equity.total) * 100 : 0;
   const unrealPct = s.equity.invested ? (s.equity.unrealized / s.equity.invested) * 100 : 0;
@@ -119,6 +121,7 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Prop
             {usd(s.equity.unrealized, true)} $ · {pct(unrealPct, true)}
           </span>
           <span className="muted small">в открытых позициях</span>
+          <LiveBadge on={live} />
         </div>
       </section>
 

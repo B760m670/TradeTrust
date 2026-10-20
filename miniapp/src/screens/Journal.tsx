@@ -1,19 +1,42 @@
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { Status } from "../api";
+import { EquityChart } from "../components/EquityChart";
 import { Card, CoinAvatar, Empty, Tile, Value } from "../components/ui";
-import { dateTime, price, rMultiple, tone, usd } from "../format";
-import { REASONS, journalStats } from "../logic";
+import { dateTime, pct, price, rMultiple, tone, usd } from "../format";
+import { REASONS, journalStats, maxDrawdown } from "../logic";
 
 const nf = (x: number) => x.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function Journal({ status: s }: { status: Status }) {
   const st = journalStats(s.trades);
+  const total = Math.round(s.equity.total * 100) / 100;
+  // история с сервера плюс текущий капитал (с живыми ценами) последней точкой
+  const points = useMemo<[number, number][]>(() => {
+    const history = s.equity_history ?? [];
+    const last = history[history.length - 1];
+    const now = Math.floor(Date.now() / 1000);
+    return last && now <= last[0] ? history : [...history, [now, total]];
+  }, [s.equity_history, total]);
+  const values = points.map(([, v]) => v);
+  const change = values.length > 1 ? (values[values.length - 1] / values[0] - 1) * 100 : null;
   return (
     <div className="journal">
       <header className="page-head">
         <h1>Журнал</h1>
         <span className="muted">Закрытые сделки и всё, что делал бот</span>
       </header>
+
+      <Card title="Капитал" className="equity-card" aside={change == null ? undefined
+        : <span className={`pill pill-${tone(change)}`}>{pct(change, true)} за {Math.max(1, Math.round((points[points.length - 1][0] - points[0][0]) / 86400))} дн.</span>}>
+        {points.length > 1
+          ? <div className="equity-area"><EquityChart points={points} /></div>
+          : <Empty title="График появится после первых свечей">Бот записывает капитал после каждой 4-часовой свечи.</Empty>}
+        <div className="equity-foot">
+          <span>Сейчас <strong className="num">{usd(total)} $</strong></span>
+          <span>Худшая просадка <strong className={`num tone-${values.length > 1 && maxDrawdown(values) < 0 ? "down" : "neutral"}`}>
+            {pct(maxDrawdown(values))}</strong></span>
+        </div>
+      </Card>
 
       <div className="tiles tiles-6">
         <Tile label="Сделок" value={st.count} hint={`открыто: ${s.positions.length}`} />

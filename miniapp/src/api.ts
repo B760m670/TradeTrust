@@ -75,11 +75,13 @@ export interface EditableSettings {
   daily_loss_limit_pct: number;
   capital_usdt: number;
   proposal_ttl_min: number;
+  report_hour_utc: number;
   btc_filter: boolean;
+  daily_report: boolean;
   coins: string[];
 }
 
-export type NumericSetting = Exclude<keyof EditableSettings, "btc_filter" | "coins">;
+export type NumericSetting = Exclude<keyof EditableSettings, "btc_filter" | "daily_report" | "coins">;
 
 export interface Settings extends EditableSettings {
   atr_mult: number;
@@ -102,6 +104,7 @@ export interface Status {
   settings_defaults: EditableSettings;
   settings_limits: Record<NumericSetting, { min: number; max: number }>;
   all_coins: string[];
+  equity_history: [number, number][]; // [время, капитал] после каждой 4ч свечи
 }
 
 export interface ChartData {

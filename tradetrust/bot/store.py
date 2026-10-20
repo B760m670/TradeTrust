@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS trades (
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, level TEXT, text TEXT);
+CREATE TABLE IF NOT EXISTS equity (ts INTEGER PRIMARY KEY, total REAL);
 """
 
 
@@ -137,6 +138,16 @@ class Store:
     def realized_since(self, ts: int) -> float:
         rows = self._all("SELECT COALESCE(SUM(pnl_usdt), 0) AS s FROM trades WHERE closed_at >= ?", ts)
         return float(rows[0]["s"])
+
+    def add_equity(self, ts: int, total: float) -> None:
+        self._exec("INSERT OR REPLACE INTO equity(ts, total) VALUES(?, ?)", ts, total)
+
+    def equity_history(self, since: int = 0) -> list[tuple[int, float]]:
+        return [(r["ts"], r["total"]) for r in self._all("SELECT ts, total FROM equity WHERE ts >= ? ORDER BY ts", since)]
+
+    def equity_before(self, ts: int) -> float | None:
+        rows = self._all("SELECT total FROM equity WHERE ts <= ? ORDER BY ts DESC LIMIT 1", ts)
+        return float(rows[0]["total"]) if rows else None
 
     def log(self, text: str, level: str = "info") -> None:
         self._exec("INSERT INTO events(ts, level, text) VALUES(?, ?, ?)", now(), level, text)

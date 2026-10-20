@@ -4,7 +4,7 @@ import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../compone
 import { CheckIcon } from "../components/icons";
 import { Button, Card } from "../components/ui";
 import { usd } from "../format";
-import { changedSettings, stepValue } from "../logic";
+import { changedSettings, localTime, stepValue } from "../logic";
 import { confirmAction, haptic } from "../telegram";
 import { THEME_OPTIONS, useTheme } from "../theme";
 
@@ -26,15 +26,17 @@ const FIELDS: Field[] = [
 ];
 
 const num = (x: number) => x.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+const OFFSET_MIN = -new Date().getTimezoneOffset(); // часовой пояс телефона или компьютера
 
-function Stepper({ value, min, max, step, unit, label, onChange }: {
+function Stepper({ value, min, max, step, unit, label, onChange, format }: {
   value: number; min: number; max: number; step: number; unit: string; label: string; onChange: (v: number) => void;
+  format?: (v: number) => string;
 }) {
   const move = (d: number) => { haptic(); onChange(stepValue(value, d, step, min, max)); };
   return (
     <div className="stepper" role="group" aria-label={label}>
       <button aria-label="Меньше" disabled={value <= min} onClick={() => move(-1)}>−</button>
-      <output aria-live="polite">{num(value)}{unit}</output>
+      <output aria-live="polite">{format ? format(value) : `${num(value)}${unit}`}</output>
       <button aria-label="Больше" disabled={value >= max} onClick={() => move(1)}>+</button>
     </div>
   );
@@ -134,6 +136,24 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
               <PauseButton status={s} busy={busy} act={act} />
             </div>
             <p className="footnote">Выходы по сигналу и стопы работают в любом режиме и на паузе.</p>
+          </Card>
+
+          <Card title="Ежедневная сводка">
+            <div>
+              <div className={`field${isChanged("daily_report") ? " changed" : ""}`}>
+                <div className="field-text">
+                  <strong>Присылать в Telegram</strong>
+                  <span>Капитал, итог за сутки, позиции и сигналы</span>
+                </div>
+                <Switch checked={draft.daily_report} label="Ежедневная сводка" onChange={(v) => set("daily_report", v)} />
+              </div>
+              <div className={`field${isChanged("report_hour_utc") ? " changed" : ""}${draft.daily_report ? "" : " disabled"}`}>
+                <div className="field-text"><strong>Время</strong><span>По вашим часам</span></div>
+                <Stepper value={draft.report_hour_utc} min={0} max={23} step={1} unit="" label="Время сводки"
+                  format={(h) => localTime(h, OFFSET_MIN)} onChange={(v) => set("report_hour_utc", v)} />
+              </div>
+            </div>
+            <p className="footnote">Сводку можно запросить и в любой момент: команда /report.</p>
           </Card>
 
           <Card title="Система">

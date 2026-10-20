@@ -1,5 +1,5 @@
 // Свои компоненты интерфейса: карточки, плитки, кнопки, переключатель режимов, уведомления.
-import { useEffect, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import type { Position } from "../api";
 import { useAnimatedNumber } from "../hooks";
 import { price, usd, type Tone } from "../format";
@@ -144,4 +144,22 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
 
 export function StatusDot({ tone }: { tone: "up" | "amber" | "down" }) {
   return <span className={`dot dot-${tone}`} aria-hidden="true" />;
+}
+
+/** Подсвечивает значение зелёным или красным, когда оно выросло или упало. */
+export function Flash({ value, children, className }: { value: number | undefined; children: ReactNode; className?: string }) {
+  const prev = useRef(value);
+  const dir = useRef("");
+  const tick = useRef(0);
+  if (value != null && prev.current != null && value !== prev.current) {
+    dir.current = value > prev.current ? "up" : "down";
+    tick.current += 1;
+  }
+  prev.current = value;
+  return <span key={tick.current} className={`flash${dir.current ? ` flash-${dir.current}` : ""} ${className ?? ""}`}>{children}</span>;
+}
+
+/** «Онлайн»: цены приходят с биржи в реальном времени. */
+export function LiveBadge({ on }: { on: boolean }) {
+  return on ? <span className="live-badge" title="Цены обновляются с биржи в реальном времени"><StatusDot tone="up" />онлайн</span> : null;
 }

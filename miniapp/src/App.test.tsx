@@ -7,6 +7,23 @@ vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
+vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
+
+class FakeWebSocket {
+  static last: FakeWebSocket | null = null;
+  readyState = 0;
+  sent: { op: string; args?: string[] }[] = [];
+  onopen?: () => void;
+  onmessage?: (e: { data: string }) => void;
+  onclose?: () => void;
+  constructor(readonly url: string) {
+    FakeWebSocket.last = this;
+    setTimeout(() => { this.readyState = 1; this.onopen?.(); }, 0);
+  }
+  send(data: string) { this.sent.push(JSON.parse(data)); }
+  close() { this.readyState = 3; }
+  push(topic: string, data: unknown) { this.onmessage?.({ data: JSON.stringify({ topic, data }) }); }
+}
 
 type Call = { url: string; method: string; auth: string | null; body?: unknown };
 let calls: Call[];
@@ -41,6 +58,8 @@ beforeEach(() => {
     return new Response(JSON.stringify(body), { status: 200 });
   }));
   vi.stubGlobal("scrollTo", () => {});
+  vi.stubGlobal("WebSocket", FakeWebSocket);
+  FakeWebSocket.last = null;
 });
 
 afterEach(() => {
@@ -147,5 +166,30 @@ describe("mini app", () => {
     fireEvent.click(await screen.findByText("Снять все"));
     expect(screen.getByText("Выберите хотя бы одну монету.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Сохранить" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("streams live prices from the exchange into positions and equity", async () => {
+    await renderApp();
+    await screen.findByText("Вход ETH");
+    await waitFor(() => expect(FakeWebSocket.last?.readyState).toBe(1));
+    const ws = FakeWebSocket.last!;
+    expect(ws.url).toBe("wss://stream.bybit.com/v5/public/spot");
+    expect(ws.sent.flatMap((m) => m.args ?? [])).toContain("tickers.SOLUSDT");
+    const pos = status.positions[0];
+    act(() => ws.push("tickers.SOLUSDT", { lastPrice: String(pos.entry + 10), price24hPcnt: "0.05" }));
+    const pnl = (10 * pos.qty).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    await screen.findByText(`+${pnl} $`, {}, { timeout: 2000 });
+    expect(screen.getByText("онлайн")).toBeTruthy();
+  });
+
+  it("shows the equity chart and daily summary settings", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Журнал" }));
+    await screen.findByText("Худшая просадка");
+    expect(screen.getByTestId("equity-chart")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Настройки" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Ежедневная сводка" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ daily_report: false }));
   });
 });
