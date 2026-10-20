@@ -17,20 +17,20 @@
    "stop": 80.77,
    "price": 102.56410256410257,
    "pnl_usdt": -0.023435897435894106,
-   "opened_at": 1792453081
+   "opened_at": 1792521192
   }
  ],
  "proposals": [
   {
-   "id": "071b7c9f3b97",
+   "id": "5614c3fa0b8c",
    "coin": "ETH",
    "symbol": "ETHUSDT",
    "price": 2051.2820512820513,
    "stop": 1615.3846153846155,
    "qty": 0.022,
    "risk_usdt": 9.589743589743588,
-   "created_at": 1792453081,
-   "expires_at": 1792456681,
+   "created_at": 1792521192,
+   "expires_at": 1792524792,
    "status": "pending",
    "message_id": null
   }
@@ -76,8 +76,8 @@
    "entry": 10.261538461538462,
    "stop": 8.08,
    "exit": 7.995200400000001,
-   "opened_at": 1792453081,
-   "closed_at": 1792453081,
+   "opened_at": 1792521192,
+   "closed_at": 1792521192,
    "reason": "stop",
    "pnl_usdt": -10.42099500620203,
    "r": -1.0425364035684057
@@ -85,66 +85,130 @@
  ],
  "events": [
   {
-   "id": 8,
-   "ts": 1792453081,
+   "id": 6,
+   "ts": 1792521193,
    "level": "info",
    "text": "🔴 LINK: сработал стоп по 7.995. Итог -10.42 USDT, -1.04R"
   },
   {
-   "id": 7,
-   "ts": 1792453081,
-   "level": "info",
-   "text": "✅ Куплено 4.582 LINK по 10.26 (≈47.02 USDT). Стоп 8.08, риск 10.00 USDT"
-  },
-  {
-   "id": 6,
-   "ts": 1792453081,
-   "level": "info",
-   "text": "✅ Куплено 4.582 LINK по 10.26 (≈47.02 USDT). Стоп 8.08, риск 10.00 USDT"
-  },
-  {
    "id": 5,
-   "ts": 1792453081,
+   "ts": 1792521192,
    "level": "info",
-   "text": "✅ Куплено 0.457 SOL по 102.6 (≈46.90 USDT). Стоп 80.77, риск 9.98 USDT"
+   "text": "✅ Куплено 4.582 LINK по 10.26 (≈47.02 USDT). Стоп 8.08, риск 10.00 USDT"
   },
   {
    "id": 4,
-   "ts": 1792453081,
+   "ts": 1792521192,
    "level": "info",
    "text": "✅ Куплено 0.457 SOL по 102.6 (≈46.90 USDT). Стоп 80.77, риск 9.98 USDT"
   },
   {
    "id": 3,
-   "ts": 1792453081,
+   "ts": 1792521192,
    "level": "info",
    "text": "📈 ВХОД LINK ~10.26, стоп 8.077 (−21.3%)\nКупить 4.588 LINK ≈ 47.06 USDT, риск 10.00 USDT.\nПредложение действует 60 мин."
   },
   {
    "id": 2,
-   "ts": 1792453081,
+   "ts": 1792521192,
    "level": "info",
    "text": "📈 ВХОД ETH ~2,051.3, стоп 1,615.4 (−21.2%)\nКупить 0.022 ETH ≈ 45.13 USDT, риск 9.59 USDT.\nПредложение действует 60 мин."
   },
   {
    "id": 1,
-   "ts": 1792453081,
+   "ts": 1792521192,
    "level": "info",
    "text": "📈 ВХОД SOL ~102.6, стоп 80.77 (−21.3%)\nКупить 0.458 SOL ≈ 46.97 USDT, риск 9.98 USDT.\nПредложение действует 60 мин."
   }
  ],
  "settings": {
   "risk_pct": 1.0,
+  "max_positions": 5,
+  "max_position_pct": 25.0,
+  "max_total_risk_pct": 5.0,
+  "daily_loss_limit_pct": 3.0,
+  "capital_usdt": 0.0,
+  "proposal_ttl_min": 60,
+  "btc_filter": false,
+  "coins": [
+   "SOL",
+   "ETH",
+   "LINK"
+  ],
   "atr_mult": 2.0,
   "ema_fast": 3,
-  "ema_slow": 6,
-  "btc_filter": false,
-  "capital_usdt": 0.0,
+  "ema_slow": 6
+ },
+ "settings_defaults": {
+  "risk_pct": 1.0,
   "max_positions": 5,
+  "max_position_pct": 25.0,
+  "max_total_risk_pct": 5.0,
+  "daily_loss_limit_pct": 3.0,
+  "capital_usdt": 0.0,
+  "proposal_ttl_min": 60,
+  "btc_filter": false,
   "coins": [
    "SOL",
    "ETH",
    "LINK"
   ]
- }
+ },
+ "settings_limits": {
+  "risk_pct": {
+   "min": 0.1,
+   "max": 3.0
+  },
+  "max_positions": {
+   "min": 1,
+   "max": 10
+  },
+  "max_position_pct": {
+   "min": 5.0,
+   "max": 50.0
+  },
+  "max_total_risk_pct": {
+   "min": 1.0,
+   "max": 10.0
+  },
+  "daily_loss_limit_pct": {
+   "min": 1.0,
+   "max": 10.0
+  },
+  "capital_usdt": {
+   "min": 0.0,
+   "max": 10000000.0
+  },
+  "proposal_ttl_min": {
+   "min": 15,
+   "max": 240
+  }
+ },
+ "all_coins": [
+  "BTC",
+  "ETH",
+  "SOL",
+  "XRP",
+  "DOGE",
+  "ADA",
+  "LINK",
+  "AVAX",
+  "BNB",
+  "TRX",
+  "DOT",
+  "LTC",
+  "BCH",
+  "NEAR",
+  "UNI",
+  "ATOM",
+  "XLM",
+  "ETC",
+  "FIL",
+  "AAVE",
+  "APT",
+  "OP",
+  "ARB",
+  "INJ",
+  "SUI"
+ ]
 }

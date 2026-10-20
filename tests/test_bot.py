@@ -549,3 +549,76 @@ def test_app_command_sends_webapp_button(make_bot):
     tg.setup()
     menu = [p for m, p in tg.calls if m == "setChatMenuButton"][0]
     assert menu["menu_button"]["web_app"]["url"] == "https://1-2-3-4.sslip.io" and menu["chat_id"] == 42
+
+
+# --- настройки из мини-приложения ---------------------------------------------
+
+def test_settings_change_applies_persists_and_notifies(make_bot, tmp_path):
+    bot, ex, rec = make_bot("auto")
+    assert bot.update_settings({"risk_pct": 0.5, "max_positions": 3, "btc_filter": True}) == "Настройки сохранены"
+    assert bot.cfg.risk_pct == 0.5 and bot.params.risk == pytest.approx(0.005)
+    assert bot.params.atr_period == 3  # остальные параметры системы не тронуты
+    assert any("риск на сделку, %: 1 → 0,5" in t for t, _ in rec.sent)
+    # после перезапуска бот берёт сохранённое, «Сбросить» возвращает .env
+    again = Bot(Config(mode="auto", coins=["SOL"], ema_fast=3, ema_slow=6, db_path=bot.cfg.db_path),
+                ex, Store(bot.cfg.db_path))
+    assert (again.cfg.risk_pct, again.cfg.max_positions, again.cfg.btc_filter) == (0.5, 3, True)
+    again.reset_settings()
+    assert again.cfg.risk_pct == 1.0 and again.store.get("settings") == {}
+
+
+def test_half_percent_risk_halves_position(make_bot):
+    bot, ex, _ = make_bot("auto")
+    bot.update_settings({"risk_pct": 0.5})
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    pos = bot.store.position("SOL")
+    assert (pos.entry - pos.stop) * pos.qty <= 5.0 + 1e-6
+
+
+@pytest.mark.parametrize("changes", [
+    {"risk_pct": 10}, {"risk_pct": "1"}, {"max_positions": 2.5}, {"max_positions": True},
+    {"coins": []}, {"coins": ["NOPE"]}, {"atr_mult": 3}, {"ema_fast": 5},
+    {"risk_pct": 3, "max_total_risk_pct": 2},
+])
+def test_settings_outside_limits_are_rejected(make_bot, changes):
+    bot, _, rec = make_bot("auto")
+    with pytest.raises(ValueError):
+        bot.update_settings(changes)
+    assert bot.cfg.risk_pct == 1.0 and bot.cfg.coins == ["SOL"] and not rec.sent
+
+
+def test_removed_coin_still_exits_but_no_new_entries(make_bot):
+    bot, ex, _ = make_bot("auto", coins=("SOL", "ETH"))
+    ex.set("SOL", cross_on_last_bar())
+    ex.set("ETH", cross_on_last_bar())
+    bot.on_candle_close()
+    bot.update_settings({"coins": ["ETH"]})
+    assert bot.watched_coins() == ["ETH", "SOL"]
+    ex.set("SOL", trend_down_last_bar().set_axis(pd.date_range("2026-03-01", periods=60, freq="4h", tz="UTC")))
+    bot.on_candle_close()
+    assert bot.store.position("SOL") is None
+
+
+def test_api_settings_endpoint(make_bot):
+    bot, _, _ = make_bot("confirm")
+    server = api.serve(bot, "secret-token", 0)
+    port = server.server_address[1]
+
+    def post(body):
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/settings", data=json.dumps(body).encode(),
+                                     method="POST", headers={"Authorization": "Bearer secret-token"})
+        return json.loads(urllib.request.urlopen(req).read())
+    try:
+        assert post({"daily_loss_limit_pct": 2})["message"] == "Настройки сохранены"
+        assert bot.cfg.daily_loss_limit_pct == 2.0
+        with pytest.raises(HTTPError) as e:
+            post({"risk_pct": 0})
+        assert e.value.code == 400 and "риск на сделку" in json.loads(e.value.read())["error"]
+        post({"reset": True})
+        assert bot.cfg.daily_loss_limit_pct == 3.0
+        status = bot.status()
+        assert status["settings_limits"]["risk_pct"] == {"min": 0.1, "max": 3.0}
+        assert status["settings_defaults"]["daily_loss_limit_pct"] == 3.0 and "SOL" in status["all_coins"]
+    finally:
+        server.shutdown()

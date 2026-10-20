@@ -20,6 +20,8 @@ from . import webapp_auth
 from .config import MODES
 from .engine import Bot
 
+mimetypes.add_type("font/woff2", ".woff2")  # шрифты мини-приложения; в старых Python типа нет
+
 log = logging.getLogger("tradetrust.api")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -92,7 +94,7 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
                     return self._send(200, bot.status())
                 if url.path == "/api/candles":
                     coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
-                    if coin not in bot.cfg.coins:
+                    if coin not in bot.watched_coins():
                         return self._send(400, {"error": "unknown coin"})
                     return self._send(200, bot.chart(coin))
             except Exception as exc:
@@ -120,6 +122,15 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
                 if parts == ["api", "resume"]:
                     bot.resume()
                     return self._send(200, {"message": "пауза снята"})
+                if parts == ["api", "settings"]:
+                    body = self._body()
+                    if not isinstance(body, dict):
+                        return self._send(400, {"error": "нужен объект с настройками"})
+                    try:
+                        msg = bot.reset_settings() if body.get("reset") is True else bot.update_settings(body)
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
+                    return self._send(200, {"message": msg})
                 if parts[:2] == ["api", "positions"] and len(parts) == 4 and parts[3] == "close":
                     return self._send(200, {"message": bot.close(parts[2].upper(), "manual")})
             except Exception as exc:

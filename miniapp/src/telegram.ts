@@ -14,7 +14,15 @@ interface TelegramWebApp {
     notificationOccurred(type: "error" | "success" | "warning"): void;
   };
   showConfirm?(message: string, callback: (ok: boolean) => void): void;
+  setHeaderColor?(color: string): void;
+  setBackgroundColor?(color: string): void;
+  setBottomBarColor?(color: string): void;
   onEvent?(event: "themeChanged", cb: () => void): void;
+  offEvent?(event: "themeChanged", cb: () => void): void;
+  CloudStorage?: {
+    getItem(key: string, cb: (err: unknown, value?: string) => void): void;
+    setItem(key: string, value: string, cb?: (err: unknown) => void): void;
+  };
 }
 
 declare global {
@@ -43,6 +51,47 @@ export function confirmAction(message: string): Promise<boolean> {
   );
 }
 
-export function platform(): "ios" | "base" {
-  return tg && ["ios", "macos"].includes(tg.platform) ? "ios" : "base";
+/** Шапка и фон Telegram в цвет приложения (у приложения своя тёмная тема). */
+export function paintChrome(color: string): void {
+  for (const set of [tg?.setHeaderColor, tg?.setBackgroundColor, tg?.setBottomBarColor]) {
+    try {
+      set?.call(tg, color);
+    } catch {
+      // старые клиенты Telegram этих методов не знают
+    }
+  }
 }
+
+/** Небольшие настройки приложения: в облаке Telegram (общие для телефона и ПК) и копия в localStorage. */
+export const prefs = {
+  getLocal(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  getCloud(key: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const cloud = tg?.CloudStorage;
+      if (!cloud) return resolve(null);
+      try {
+        cloud.getItem(key, (err, value) => resolve(err ? null : value || null));
+      } catch {
+        resolve(null);
+      }
+    });
+  },
+  set(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // приватный режим — останется только облако
+    }
+    try {
+      tg?.CloudStorage?.setItem(key, value);
+    } catch {
+      // старый клиент Telegram
+    }
+  },
+};

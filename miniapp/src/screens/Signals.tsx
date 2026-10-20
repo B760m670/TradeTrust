@@ -1,24 +1,66 @@
-import { Cell, Section } from "@telegram-apps/telegram-ui";
+import { useState, type CSSProperties } from "react";
 import type { Status } from "../api";
-import { Chip } from "../components/ui";
-import { dateTime, price } from "../format";
-import { signalRows } from "../logic";
+import { Card, Chip, CoinAvatar, Empty } from "../components/ui";
+import { clock, dateTime, pct, price, tone } from "../format";
+import { useNow } from "../hooks";
+import { SIGNAL_FILTERS, emaGap, filterRows, nextCandleClose, signalRows, type SignalFilter } from "../logic";
+import { haptic } from "../telegram";
 
 const BAR_SECONDS = 4 * 3600;
 
 export function Signals({ status: s, onOpenCoin }: { status: Status; onOpenCoin: (coin: string) => void }) {
-  const rows = signalRows(s.signals, new Set(s.positions.map((p) => p.coin)));
-  const header = s.last_bar ? `Свеча 4ч закрылась ${dateTime(s.last_bar + BAR_SECONDS)}` : "Ждём закрытия первой свечи";
+  const [filter, setFilter] = useState<SignalFilter>("all");
+  const now = useNow();
+  const all = signalRows(s.signals, new Set(s.positions.map((p) => p.coin)));
+  const rows = filterRows(all, filter);
+  const counts = Object.fromEntries(SIGNAL_FILTERS.map(([f]) => [f, filterRows(all, f).length]));
+
   return (
-    <Section header={header} footer="Сигналы — результат правил системы, а не рекомендация.">
-      {rows.length === 0 && <Cell>Данных пока нет</Cell>}
-      {rows.map(({ coin, signal, state }) => (
-        <Cell key={coin} onClick={() => onOpenCoin(coin)}
-          subtitle={signal.error ? "ошибка загрузки" : price(signal.price)}
-          after={<Chip tone={state.tone}>{state.label}</Chip>}>
-          {coin}
-        </Cell>
-      ))}
-    </Section>
+    <div className="signals">
+      <header className="page-head">
+        <h1>Сигналы</h1>
+        <span className="muted">
+          {s.last_bar ? `Свеча закрылась ${dateTime(s.last_bar + BAR_SECONDS)}` : "Ждём закрытия первой свечи"}
+          {" · "}следующая в {clock(nextCandleClose(now))}
+        </span>
+      </header>
+
+      <div className="filters" role="tablist" aria-label="Фильтр">
+        {SIGNAL_FILTERS.map(([f, label]) => (
+          <button key={f} role="tab" aria-selected={filter === f} className={filter === f ? "on" : undefined}
+            onClick={() => { haptic(); setFilter(f); }}>
+            {label}<span className="count">{counts[f]}</span>
+          </button>
+        ))}
+      </div>
+
+      <Card className="table-card">
+        <div className="sig-row sig-head" aria-hidden="true">
+          <span>Монета</span><span>Цена</span><span className="col-wide">EMA {s.settings.ema_fast}/{s.settings.ema_slow}</span>
+          <span className="col-wide">ATR</span><span>Состояние</span>
+        </div>
+        {rows.map(({ coin, signal, state }, i) => {
+          const gap = emaGap(signal);
+          const atrPct = signal.atr && signal.price ? (signal.atr / signal.price) * 100 : null;
+          return (
+            <button key={coin} className="sig-row tappable" style={{ "--i": i } as CSSProperties} onClick={() => onOpenCoin(coin)}>
+              <span className="sig-coin">
+                <CoinAvatar coin={coin} tone={state.tone === "muted" ? "muted" : state.tone} size={34} />
+                <span className="sig-name">
+                  <strong>{coin}</strong>
+                  {gap != null && <span className={`small tone-${tone(gap)} narrow-only`}>EMA {pct(gap, true)}</span>}
+                </span>
+              </span>
+              <span className="num">{signal.error ? "ошибка" : price(signal.price)}</span>
+              <span className={`num col-wide tone-${gap == null ? "neutral" : tone(gap)}`}>{gap == null ? "—" : pct(gap, true)}</span>
+              <span className="num col-wide muted">{atrPct == null ? "—" : pct(atrPct)}</span>
+              <span className="sig-state"><Chip tone={state.tone}>{state.label}</Chip></span>
+            </button>
+          );
+        })}
+        {rows.length === 0 && <Empty title="Таких монет сейчас нет" />}
+      </Card>
+      <p className="footnote">Сигналы — результат правил системы, а не рекомендация. EMA — разрыв между средними, ATR — средний размах свечи.</p>
+    </div>
   );
 }
