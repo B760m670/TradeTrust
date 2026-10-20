@@ -1,0 +1,10 @@
+.git
+android
+data
+reports
+botdata
+tests
+.env
+miniapp/node_modules
+tradetrust/bot/web
+**/__pycache__

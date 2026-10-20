@@ -1,0 +1,61 @@
+/* Дополнения к Telegram UI. Цвета темы — переменные Telegram (--tg-theme-*). */
+:root {
+  --up: #1fa971;
+  --down: #e5484d;
+  --amber: #e2a336;
+  --accent: var(--tg-theme-button-color, #3b82f6);
+  --hint: var(--tg-theme-hint-color, #8b929c);
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--tg-theme-secondary-bg-color, var(--tg-theme-bg-color, #f1f2f6));
+  color: var(--tg-theme-text-color, #111);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.content { padding: 8px 0 calc(84px + env(safe-area-inset-bottom)); max-width: 680px; margin: 0 auto; }
+.center { display: flex; justify-content: center; padding: 64px 0; }
+.banner { margin: 0 16px 8px; padding: 10px 12px; border-radius: 12px; font-size: 14px;
+  color: var(--down); background: color-mix(in srgb, var(--down) 12%, transparent); }
+
+.tone-up { color: var(--up); }
+.tone-down { color: var(--down); }
+.bold { font-weight: 600; }
+.right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; }
+.unit { color: var(--hint); font-weight: 400; font-size: .55em; margin-left: 4px; }
+
+.chip { display: inline-block; padding: 4px 9px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  white-space: nowrap; background: color-mix(in srgb, currentColor 14%, transparent); }
+.chip-up { color: var(--up); }
+.chip-down { color: var(--down); }
+.chip-accent { color: var(--accent); }
+.chip-amber { color: var(--amber); }
+.chip-muted { color: var(--hint); }
+
+.account { padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.account .equity { margin-top: 6px; }
+.account .hint { color: var(--hint); font-size: 14px; }
+.account .modes { margin-top: 12px; width: 100%; }
+
+.proposal + .proposal { border-top: 1px solid color-mix(in srgb, var(--hint) 20%, transparent); }
+.actions { display: flex; gap: 8px; padding: 4px 16px 14px; }
+.actions .buy { background: var(--up) !important; }
+.actions .danger { color: var(--down) !important; }
+
+.coin-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 20px 12px; }
+.chart-box { padding: 14px 8px 10px; }
+.coin-price { font-size: 26px; font-weight: 700; padding: 0 8px 6px; }
+.chart { width: 100%; height: 280px; }
+.chart-loading { height: 280px; display: flex; align-items: center; justify-content: center; }
+.legend { display: flex; gap: 14px; padding: 8px 8px 0; font-size: 12px; color: var(--hint); }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 8px 16px 12px; }
+.stat { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 14px;
+  background: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #fff)); }
+.stat .value { font-size: 18px; }
+.stat-label { font-size: 12px; color: var(--hint); }
+
+.tab-icon { font-size: 20px; line-height: 1; }
