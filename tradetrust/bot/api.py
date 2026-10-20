@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import webapp_auth
 from .config import MODES
-from .engine import Bot
+from .engine import CHART_INTERVALS, Bot
 
 mimetypes.add_type("font/woff2", ".woff2")  # шрифты мини-приложения; в старых Python типа нет
 
@@ -95,10 +95,14 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
                 if url.path == "/api/portfolio":
                     return self._send(200, bot.portfolio())
                 if url.path == "/api/candles":
-                    coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
+                    query = parse_qs(url.query)
+                    coin = (query.get("coin") or [""])[0].upper()
+                    interval = (query.get("interval") or ["4h"])[0]
                     if coin not in bot.watched_coins():
                         return self._send(400, {"error": "unknown coin"})
-                    return self._send(200, bot.chart(coin))
+                    if interval not in CHART_INTERVALS:
+                        return self._send(400, {"error": "unknown interval"})
+                    return self._send(200, bot.chart(coin, interval))
             except Exception as exc:
                 log.exception("api")
                 return self._send(502, {"error": str(exc)})

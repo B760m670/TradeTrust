@@ -7,6 +7,7 @@ vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
+vi.mock("./components/TickChart", () => ({ TickChart: () => <div data-testid="tick-chart" /> }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
 
 const PORTFOLIO = {
@@ -63,7 +64,8 @@ beforeEach(() => {
       body: init.body ? JSON.parse(init.body as string) : undefined });
     const body = url === "/api/status" ? status
       : url === "/api/portfolio" ? PORTFOLIO
-      : url.startsWith("/api/candles") ? { coin: "SOL", time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
+      : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
+        time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
     return new Response(JSON.stringify(body), { status: 200 });
   }));
@@ -140,7 +142,13 @@ describe("mini app", () => {
     expect(document.querySelector(".sidebar")).toBeTruthy();
     expect(document.querySelector(".bottom-nav")).toBeNull();
     expect(screen.getByTestId("chart")).toBeTruthy();
-    expect(calls.some((c) => c.url === "/api/candles?coin=SOL")).toBe(true);
+    expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=4h")).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "1ч" }));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=1h")).toBe(true));
+    await screen.findByText(/бот решает по 4ч/);
+    fireEvent.click(screen.getByRole("radio", { name: "1с" }));
+    expect(screen.getByTestId("tick-chart")).toBeTruthy();
+    expect(localStorage.getItem("chart_tf")).toBe("1s");
     fireEvent.click(screen.getByRole("button", { name: "Сигналы" }));
     await screen.findByText("Состояние");
   });

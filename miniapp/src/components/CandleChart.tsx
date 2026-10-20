@@ -33,6 +33,7 @@ export function useChartColors() {
 export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartData; bars?: number; live?: LiveCandle | null }) {
   const box = useRef<HTMLDivElement>(null);
   const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
   const liveRef = useRef(live);
   liveRef.current = live;
   const lastClosed = data.time[data.time.length - 1] ?? 0;
@@ -63,7 +64,7 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
       localization: { locale: "ru-RU", priceFormatter: (p: number) => price(p) },
-      handleScale: { axisPressedMouseMove: false },
+      handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
 
     const levels = data.position ? [data.position.stop, data.position.entry] : [];
@@ -111,14 +112,44 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
 
     const n = data.time.length;
     series.current = candles;
+    chartRef.current = chart;
     applyLive(liveRef.current);
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
     return () => {
       series.current = null;
+      chartRef.current = null;
       chart.remove();
     };
   }, [data, bars, theme]);
 
-  return <div ref={box} className="chart" data-testid="chart" />;
+  // приближение кнопками (на телефоне — ещё и двумя пальцами, на ПК — колесом)
+  const zoom = (factor: number) => {
+    const ts = chartRef.current?.timeScale();
+    const r = ts?.getVisibleLogicalRange();
+    if (!ts || !r) return;
+    const width = Math.min(data.time.length + 20, Math.max(12, (r.to - r.from) * factor));
+    ts.setVisibleLogicalRange({ from: r.to - width, to: r.to });
+  };
+  const reset = () => {
+    const n = data.time.length;
+    chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
+  };
+
+  return (
+    <div className="chart-wrap">
+      <div ref={box} className="chart" data-testid="chart" />
+      <ZoomControls onZoom={zoom} onReset={reset} />
+    </div>
+  );
+}
+
+export function ZoomControls({ onZoom, onReset }: { onZoom: (factor: number) => void; onReset: () => void }) {
+  return (
+    <div className="zoom" role="group" aria-label="Масштаб">
+      <button aria-label="Отдалить" onClick={() => onZoom(1.6)}>−</button>
+      <button aria-label="Приблизить" onClick={() => onZoom(1 / 1.6)}>+</button>
+      <button aria-label="Сбросить масштаб" onClick={onReset}>⟲</button>
+    </div>
+  );
 }
 

@@ -22,7 +22,11 @@ ENDPOINTS = {
     "demo": "https://api-demo.bybit.com",
     "testnet": "https://api-testnet.bybit.com",
 }
-INTERVALS = {"4h": ("240", 4 * 3_600_000), "1d": ("D", 86_400_000)}
+MINUTE = 60_000
+INTERVALS = {
+    "1m": ("1", MINUTE), "5m": ("5", 5 * MINUTE), "15m": ("15", 15 * MINUTE), "1h": ("60", 60 * MINUTE),
+    "4h": ("240", 240 * MINUTE), "1d": ("D", 1440 * MINUTE), "1w": ("W", 7 * 1440 * MINUTE),
+}
 
 
 class BybitError(RuntimeError):

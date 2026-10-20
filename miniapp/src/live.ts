@@ -144,15 +144,15 @@ export function useTickers(coins: string[]): Record<string, Ticker> {
   return tickers;
 }
 
-/** Формирующаяся 4ч свеча монеты. */
-export function useLiveCandle(coin: string): LiveCandle | null {
+/** Формирующаяся свеча монеты; code — интервал Bybit: 1, 5, 15, 60, 240, D, W. */
+export function useLiveCandle(coin: string, code = "240"): LiveCandle | null {
   const feed = useContext(LiveContext);
   const [candle, setCandle] = useState<LiveCandle | null>(null);
   useEffect(() => {
     if (!feed) return;
     setCandle(null);
     let latest: LiveCandle | null = null;
-    const off = feed.subscribe(`kline.240.${coin}USDT`, (d) => {
+    const off = feed.subscribe(`kline.${code}.${coin}USDT`, (d) => {
       const c = { time: num(d.start) / 1000, open: num(d.open), high: num(d.high), low: num(d.low), close: num(d.close) };
       if ([c.time, c.open, c.high, c.low, c.close].every(Number.isFinite)) latest = c;
     });
@@ -161,7 +161,7 @@ export function useLiveCandle(coin: string): LiveCandle | null {
       clearInterval(timer);
       off();
     };
-  }, [feed, coin]);
+  }, [feed, coin, code]);
   return candle;
 }
 
