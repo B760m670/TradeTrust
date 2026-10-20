@@ -12,31 +12,33 @@ import { useEffect, useRef } from "react";
 import type { ChartData } from "../api";
 import { price } from "../format";
 
-const UP = "#1fa971";
-const DOWN = "#e5484d";
-const FAST = "#3b82f6";
-const SLOW = "#e2a336";
+// цвета темы приложения (styles.css: --up, --down, --accent)
+const UP = "#4FE3B0";
+const DOWN = "#FF7A8A";
+const FAST = "#8B7CFF";
+const SLOW = "#F5B86B";
+const TEXT = "rgba(244, 245, 248, 0.45)";
 const VISIBLE_BARS = 90;
 
-function themeColor(name: string, fallback: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
-}
-
 /** Свечной график TradingView Lightweight Charts: свечи 4ч, EMA, стоп и цена входа. */
-export function CandleChart({ data }: { data: ChartData }) {
+export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; bars?: number }) {
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!box.current) return;
-    const text = themeColor("--tg-theme-hint-color", "#8b929c");
+    const text = TEXT;
     const chart: IChartApi = createChart(box.current, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: text,
-        fontFamily: "-apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+        fontFamily: "'Manrope Variable', system-ui, sans-serif",
       },
-      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(128,128,128,0.12)" } },
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.05)" } },
+      crosshair: {
+        vertLine: { color: "rgba(139,124,255,0.4)", labelBackgroundColor: FAST },
+        horzLine: { color: "rgba(139,124,255,0.4)", labelBackgroundColor: FAST },
+      },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
       localization: { locale: "ru-RU", priceFormatter: (p: number) => price(p) },
@@ -87,9 +89,9 @@ export function CandleChart({ data }: { data: ChartData }) {
     }
 
     const n = data.time.length;
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - VISIBLE_BARS), to: n + 2 });
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
     return () => chart.remove();
-  }, [data]);
+  }, [data, bars]);
 
   return <div ref={box} className="chart" data-testid="chart" />;
 }

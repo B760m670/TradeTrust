@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Equity, Settings, Trade } from "./api";
+import type { Equity, Position, Settings, Trade } from "./api";
 import { dateTime, pct, price, rMultiple, usd } from "./format";
-import { coinState, entryPlan, journalStats, signalRows } from "./logic";
+import {
+  coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows, stopRisk,
+} from "./logic";
 
 const settings: Settings = {
   risk_pct: 1, atr_mult: 2, ema_fast: 20, ema_slow: 50, btc_filter: false, capital_usdt: 0, max_positions: 5, coins: [],
@@ -29,19 +31,34 @@ describe("format", () => {
 
 describe("coinState", () => {
   it("matches what the bot sees on the last candle", () => {
-    expect(coinState({ cross_up: true, regime_ok: true }, false).label).toBe("ВХОД");
-    expect(coinState({ cross_up: true, regime_ok: false }, false).label).toBe("фильтр BTC");
-    expect(coinState({ cross_up: true, regime_ok: true }, true).label).toBe("в позиции");
-    expect(coinState({ trend_down: true }, false).label).toBe("тренд вниз");
-    expect(coinState({}, false).label).toBe("тренд вверх");
-    expect(coinState({ error: "x" }, false).label).toBe("нет данных");
-    expect(coinState(undefined, false).label).toBe("нет данных");
+    const kind = (sig: Parameters<typeof coinState>[0], held = false) => coinState(sig, held).kind;
+    expect(kind({ cross_up: true, regime_ok: true })).toBe("entry");
+    expect(coinState({ cross_up: true, regime_ok: true }, false).label).toBe("Вход");
+    expect(kind({ cross_up: true, regime_ok: false })).toBe("filtered");
+    expect(kind({ cross_up: true, regime_ok: true }, true)).toBe("held");
+    expect(kind({ trend_down: true })).toBe("down");
+    expect(kind({})).toBe("up");
+    expect(kind({ error: "x" })).toBe("none");
+    expect(kind(undefined)).toBe("none");
   });
   it("sorts entries first, then held, then by name", () => {
     const rows = signalRows({
       ETH: { trend_down: true }, SOL: {}, ARB: { cross_up: true, regime_ok: true }, BTC: { trend_down: true },
     }, new Set(["SOL"]));
     expect(rows.map((r) => r.coin)).toEqual(["ARB", "SOL", "BTC", "ETH"]);
+  });
+  it("filters by state; a BTC-filtered cross still counts as an uptrend", () => {
+    const rows = signalRows({
+      ETH: { trend_down: true }, SOL: {}, ARB: { cross_up: true, regime_ok: true }, OP: { cross_up: true },
+    }, new Set());
+    expect(filterRows(rows, "entry").map((r) => r.coin)).toEqual(["ARB"]);
+    expect(filterRows(rows, "up").map((r) => r.coin)).toEqual(["OP", "SOL"]);
+    expect(filterRows(rows, "down").map((r) => r.coin)).toEqual(["ETH"]);
+    expect(filterRows(rows, "all")).toHaveLength(4);
+  });
+  it("measures the EMA gap", () => {
+    expect(emaGap({ ema_fast: 105, ema_slow: 100 })).toBeCloseTo(5, 9);
+    expect(emaGap({ ema_fast: 1 })).toBeNull();
   });
 });
 
@@ -71,5 +88,27 @@ describe("journalStats", () => {
   });
   it("is empty-safe", () => {
     expect(journalStats([])).toEqual({ count: 0, winRate: null, pnl: 0, avgR: null, profitFactor: null });
+  });
+});
+
+describe("positions", () => {
+  const pos = (o: Partial<Position>): Position => ({
+    coin: "SOL", qty: 2, entry: 100, stop: 90, price: 110, pnl_usdt: 20, opened_at: 0, ...o,
+  });
+  it("sums the loss if every stop is hit from the current price", () => {
+    expect(stopRisk([pos({}), pos({ qty: 1, price: 95 })])).toBeCloseTo(45, 9);
+    expect(stopRisk([pos({ price: 85 })])).toBe(0);
+    expect(stopRisk([])).toBe(0);
+  });
+  it("places entry and price on the stop-to-top bar", () => {
+    const m = rangeMarks(pos({}));
+    expect(m.entry).toBeCloseTo((10 / 23) * 100, 6);
+    expect(m.price).toBeCloseTo((20 / 23) * 100, 6);
+    expect(rangeMarks(pos({ price: 80 })).price).toBe(0);
+  });
+  it("knows when the 4h candle closes", () => {
+    expect(nextCandleClose(0)).toBe(14400);
+    expect(nextCandleClose(14399)).toBe(14400);
+    expect(nextCandleClose(14400)).toBe(28800);
   });
 });

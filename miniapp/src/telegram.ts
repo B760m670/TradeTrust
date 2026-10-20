@@ -14,7 +14,9 @@ interface TelegramWebApp {
     notificationOccurred(type: "error" | "success" | "warning"): void;
   };
   showConfirm?(message: string, callback: (ok: boolean) => void): void;
-  onEvent?(event: "themeChanged", cb: () => void): void;
+  setHeaderColor?(color: string): void;
+  setBackgroundColor?(color: string): void;
+  setBottomBarColor?(color: string): void;
 }
 
 declare global {
@@ -43,6 +45,13 @@ export function confirmAction(message: string): Promise<boolean> {
   );
 }
 
-export function platform(): "ios" | "base" {
-  return tg && ["ios", "macos"].includes(tg.platform) ? "ios" : "base";
+/** Шапка и фон Telegram в цвет приложения (у приложения своя тёмная тема). */
+export function paintChrome(color: string): void {
+  for (const set of [tg?.setHeaderColor, tg?.setBackgroundColor, tg?.setBottomBarColor]) {
+    try {
+      set?.call(tg, color);
+    } catch {
+      // старые клиенты Telegram этих методов не знают
+    }
+  }
 }

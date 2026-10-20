@@ -11,12 +11,20 @@ vi.mock("./components/CandleChart", () => ({
 type Call = { url: string; method: string; auth: string | null };
 let calls: Call[];
 
+function setWidth(wide: boolean) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: wide && query.startsWith("(min-width"),
+    addEventListener() {}, removeEventListener() {},
+  }));
+}
+
 function installTelegram(initData: string) {
   window.Telegram = {
     WebApp: {
       initData, colorScheme: "dark", platform: "android", ready() {}, expand() {},
       BackButton: { show: vi.fn(), hide: vi.fn(), onClick: vi.fn(), offClick: vi.fn() },
       showConfirm: (_: string, cb: (ok: boolean) => void) => cb(true),
+      setHeaderColor: vi.fn(),
     },
   };
 }
@@ -40,8 +48,9 @@ afterEach(() => {
   delete window.Telegram;
 });
 
-async function renderApp(initData = "query_id=1&hash=abc") {
+async function renderApp(initData = "query_id=1&hash=abc", wide = false) {
   installTelegram(initData);
+  setWidth(wide);
   const { App } = await import("./App"); // tg читается при загрузке модуля
   render(<App />);
 }
@@ -55,10 +64,20 @@ describe("mini app", () => {
 
   it("shows the account, pending trade and positions from the bot", async () => {
     await renderApp();
-    await screen.findByText("ВХОД ETH");
+    await screen.findByText("Вход ETH");
     expect(calls[0]).toEqual({ url: "/api/status", method: "GET", auth: "tma query_id=1&hash=abc" });
     expect(screen.getByText("Бумажный счёт")).toBeTruthy();
-    expect(screen.getByText("SOL")).toBeTruthy();
+    expect(screen.getAllByText("SOL").length).toBeGreaterThan(0);
+    expect(screen.getByText("Стоп 80,77")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Вручную", checked: true })).toBeTruthy();
+    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenCalledWith("#07080D");
+  });
+
+  it("asks before switching to auto mode", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("radio", { name: "Авто" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.url).toBe("/api/mode");
   });
 
   it("confirms a trade with one tap", async () => {
@@ -73,11 +92,22 @@ describe("mini app", () => {
 
   it("opens a coin card and the journal", async () => {
     await renderApp();
-    fireEvent.click(await screen.findByText("Сигналы"));
-    fireEvent.click(await screen.findByText("LINK"));
+    fireEvent.click(await screen.findByRole("button", { name: "Сигналы" }));
+    fireEvent.click(await screen.findByText("LINK", { selector: "strong" }));
     await screen.findByText("Индикаторы");
-    await act(async () => fireEvent.click(screen.getByText("Журнал")));
-    await screen.findByText("profit factor");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Журнал" })));
+    await screen.findByText("Profit factor");
     expect(screen.getByText("сработал стоп", { exact: false })).toBeTruthy();
+  });
+
+  it("uses a sidebar and shows a chart on a wide screen", async () => {
+    await renderApp(undefined, true);
+    await screen.findByText("Вход ETH");
+    expect(document.querySelector(".sidebar")).toBeTruthy();
+    expect(document.querySelector(".bottom-nav")).toBeNull();
+    expect(screen.getByTestId("chart")).toBeTruthy();
+    expect(calls.some((c) => c.url === "/api/candles?coin=SOL")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Сигналы" }));
+    await screen.findByText("Состояние");
   });
 });

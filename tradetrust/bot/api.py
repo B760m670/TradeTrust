@@ -20,6 +20,8 @@ from . import webapp_auth
 from .config import MODES
 from .engine import Bot
 
+mimetypes.add_type("font/woff2", ".woff2")  # шрифты мини-приложения; в старых Python типа нет
+
 log = logging.getLogger("tradetrust.api")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 

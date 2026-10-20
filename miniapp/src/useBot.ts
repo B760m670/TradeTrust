@@ -46,5 +46,7 @@ export function useBot() {
     }
   }, [refresh]);
 
-  return { status, error, busy, message, clearMessage: () => setMessage(null), refresh, act };
+  const clearMessage = useCallback(() => setMessage(null), []);
+
+  return { status, error, busy, message, clearMessage, refresh, act };
 }

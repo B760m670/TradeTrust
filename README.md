@@ -103,7 +103,8 @@ python -m pytest
 - «Сигналы» — 25 монет, у каждой карточка со свечным графиком, EMA, стопом и планом сделки;
 - «Журнал» — статистика (прибыльные, итог, средний R, profit factor), сделки и события.
 
-Мини-приложение — `miniapp/`: TypeScript, React, компоненты Telegram UI, графики TradingView Lightweight Charts.
+Мини-приложение — `miniapp/`: TypeScript, React, свои компоненты и тёмная тема, графики TradingView Lightweight Charts.
+На телефоне — нижнее меню, в широком окне (Telegram Desktop) — боковая панель с режимом и паузой, график и список сигналов рядом.
 Docker собирает его при установке, а раздаёт сам бот. Локально: `cd miniapp && npm ci && npm test && npm run build`.
 Вход — по подписи Telegram (`initData`), пускает только
 владельца бота (`TELEGRAM_CHAT_ID`). Свой домен не нужен: HTTPS выдаётся на `<ip>.sslip.io`.
