@@ -78,13 +78,26 @@ PY
   tg=$(ask 'Токен: ')
   if [ -n "$tg" ]; then
     set_env TELEGRAM_TOKEN "$tg"
-    ask 'Напишите своему боту в Telegram /start и нажмите Enter… ' >/dev/null
-    chat=$(curl -s "https://api.telegram.org/bot$tg/getUpdates" | python3 -c '
+    chat=""
+    while [ -z "$chat" ]; do
+      ask 'Напишите своему боту в Telegram /start, подождите пару секунд и нажмите Enter… ' >/dev/null
+      chat=$(curl -s "https://api.telegram.org/bot$tg/getUpdates" | python3 -c '
 import json, sys
-ups = json.load(sys.stdin).get("result", [])
-ids = [u["message"]["chat"]["id"] for u in ups if "message" in u]
-print(ids[-1] if ids else "")')
-    [ -z "$chat" ] && chat=$(ask 'Не нашёл сообщение. Введите chat id вручную: ')
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    data = {}
+if not data.get("ok"):
+    print("ERR:" + str(data.get("description", "нет ответа от Telegram")))
+else:
+    ids = [u["message"]["chat"]["id"] for u in data.get("result", []) if "message" in u]
+    print(ids[-1] if ids else "")')
+      case "$chat" in
+        ERR:*) echo "❌ Telegram не принял токен (${chat#ERR:}). Проверьте токен и запустите установку снова."; exit 1 ;;
+        "") echo "Пока не вижу сообщения. Убедитесь, что пишете именно этому боту." ;;
+        *) echo "✅ chat id: $chat" ;;
+      esac
+    done
     set_env TELEGRAM_CHAT_ID "$chat"
   fi
 
@@ -161,8 +174,14 @@ if ! docker compose pull -q bot; then
 fi
 # shellcheck disable=SC2086
 docker compose $PROFILE up -d
-sleep 5
+sleep 10
 docker compose logs --tail 20 bot
+if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(docker compose ps -aq bot)" 2>/dev/null)" != "true 0" ]; then
+  echo
+  echo "❌ Бот не запустился — причина в логах выше. Исправьте настройки: nano $DIR/.env,"
+  echo "   затем: cd $DIR && docker compose up -d --force-recreate bot"
+  exit 1
+fi
 
 API_TOKEN=$(env_get API_TOKEN)
 say "Готово."
