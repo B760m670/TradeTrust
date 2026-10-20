@@ -31,15 +31,17 @@ export function useBot() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const act = useCallback(async (action: () => Promise<{ message: string }>) => {
+  const act = useCallback(async (action: () => Promise<{ message: string }>): Promise<boolean> => {
     setBusy(true);
     try {
       const r = await action();
       hapticResult(true);
       setMessage(r.message || "Готово");
+      return true;
     } catch (e) {
       hapticResult(false);
       setMessage((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
       await refresh();

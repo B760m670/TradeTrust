@@ -1,25 +1,26 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
-import { AlertIcon, BookIcon, HomeIcon, TrendIcon } from "./components/icons";
+import { AlertIcon, BookIcon, GearIcon, HomeIcon, TrendIcon } from "./components/icons";
 import { Empty, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
 import { useWide } from "./hooks";
 import { Coin } from "./screens/Coin";
 import { Journal } from "./screens/Journal";
 import { Overview } from "./screens/Overview";
+import { Settings } from "./screens/Settings";
 import { Signals } from "./screens/Signals";
-import { haptic, initData, paintChrome, tg } from "./telegram";
+import { haptic, initData, tg } from "./telegram";
+import { ThemeContext, useThemeState } from "./theme";
 import { useBot } from "./useBot";
 
-export type Tab = "overview" | "signals" | "journal";
+export type Tab = "overview" | "signals" | "journal" | "settings";
 
 const TABS: { id: Tab; text: string; icon: ReactNode }[] = [
   { id: "overview", text: "Обзор", icon: <HomeIcon /> },
   { id: "signals", text: "Сигналы", icon: <TrendIcon /> },
   { id: "journal", text: "Журнал", icon: <BookIcon /> },
+  { id: "settings", text: "Настройки", icon: <GearIcon /> },
 ];
-
-const BG = "#07080D";
 
 function Logo() {
   return <span className="logo" aria-hidden="true">TT</span>;
@@ -58,7 +59,7 @@ function Sidebar({ tab, onTab, status, busy, act, inCoin }: {
 function BottomNav({ tab, onTab, inCoin }: { tab: Tab; onTab: (t: Tab) => void; inCoin: boolean }) {
   const index = TABS.findIndex((t) => t.id === tab);
   return (
-    <nav className="bottom-nav" aria-label="Разделы" style={{ "--i": index } as CSSProperties}>
+    <nav className="bottom-nav" aria-label="Разделы" style={{ "--i": index, "--n": TABS.length } as CSSProperties}>
       {!inCoin && <span className="bottom-thumb" aria-hidden="true" />}
       {TABS.map((t) => (
         <button key={t.id} className={!inCoin && tab === t.id ? "on" : undefined}
@@ -123,6 +124,8 @@ function Main() {
     body = <Signals status={status} onOpenCoin={openCoin} />;
   } else if (tab === "journal") {
     body = <Journal status={status} />;
+  } else if (tab === "settings") {
+    body = <Settings status={status} busy={busy} act={act} />;
   } else {
     body = <Overview status={status} busy={busy} act={act} wide={wide} onOpenCoin={openCoin} onTab={openTab} />;
   }
@@ -141,16 +144,20 @@ function Main() {
 }
 
 export function App() {
-  useEffect(() => paintChrome(BG), []);
-  return initData()
-    ? <Main />
-    : (
-      <div className="app narrow">
-        <main className="content">
-          <Empty icon={<Logo />} title="TradeTrust">
-            Откройте приложение через своего Telegram-бота: кнопка «Открыть» внизу чата.
-          </Empty>
-        </main>
-      </div>
-    );
+  const theme = useThemeState();
+  return (
+    <ThemeContext.Provider value={theme}>
+      {initData()
+        ? <Main />
+        : (
+          <div className="app narrow">
+            <main className="content">
+              <Empty icon={<Logo />} title="TradeTrust">
+                Откройте приложение через своего Telegram-бота: кнопка «Открыть» внизу чата.
+              </Empty>
+            </main>
+          </div>
+        )}
+    </ThemeContext.Provider>
+  );
 }

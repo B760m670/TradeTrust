@@ -66,15 +66,25 @@ export interface Signal {
   error?: string;
 }
 
-export interface Settings {
+/** То, что владелец меняет из приложения (tradetrust/bot/engine.py: EDITABLE). */
+export interface EditableSettings {
   risk_pct: number;
+  max_positions: number;
+  max_position_pct: number;
+  max_total_risk_pct: number;
+  daily_loss_limit_pct: number;
+  capital_usdt: number;
+  proposal_ttl_min: number;
+  btc_filter: boolean;
+  coins: string[];
+}
+
+export type NumericSetting = Exclude<keyof EditableSettings, "btc_filter" | "coins">;
+
+export interface Settings extends EditableSettings {
   atr_mult: number;
   ema_fast: number;
   ema_slow: number;
-  btc_filter: boolean;
-  capital_usdt: number;
-  max_positions: number;
-  coins: string[];
 }
 
 export interface Status {
@@ -89,6 +99,9 @@ export interface Status {
   trades: Trade[];
   events: BotEvent[];
   settings: Settings;
+  settings_defaults: EditableSettings;
+  settings_limits: Record<NumericSetting, { min: number; max: number }>;
+  all_coins: string[];
 }
 
 export interface ChartData {
@@ -135,4 +148,6 @@ export const api = {
   pause: () => request<Message>("/api/pause", "POST"),
   resume: () => request<Message>("/api/resume", "POST"),
   close: (coin: string) => request<Message>(`/api/positions/${coin}/close`, "POST"),
+  saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
+  resetSettings: () => request<Message>("/api/settings", "POST", { reset: true }),
 };

@@ -10,7 +10,7 @@ import logging
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Protocol
 
@@ -18,6 +18,7 @@ import pandas as pd
 
 from .. import backtest as bt
 from ..indicators import btc_regime
+from ..research import COINS
 from .config import Config
 from .store import Position, Proposal, Store, now
 
@@ -51,12 +52,115 @@ def fmt(x: float) -> str:
     return f"{x:,.1f}" if x >= 1000 else f"{x:.4g}"
 
 
+# Что владелец может менять из мини-приложения, и в каких границах. Параметры самой системы
+# (EMA, ATR) — только в .env: на них построены проверки на истории.
+LIMITS: dict[str, tuple[type, float, float]] = {
+    "risk_pct": (float, 0.1, 3.0),
+    "max_positions": (int, 1, 10),
+    "max_position_pct": (float, 5.0, 50.0),
+    "max_total_risk_pct": (float, 1.0, 10.0),
+    "daily_loss_limit_pct": (float, 1.0, 10.0),
+    "capital_usdt": (float, 0.0, 10_000_000.0),
+    "proposal_ttl_min": (int, 15, 240),
+}
+EDITABLE = (*LIMITS, "btc_filter", "coins")
+LABELS = {
+    "risk_pct": "риск на сделку, %", "max_positions": "позиций максимум", "max_position_pct": "в одной монете, %",
+    "max_total_risk_pct": "общий риск, %", "daily_loss_limit_pct": "дневной лимит убытка, %",
+    "capital_usdt": "капитал бота, USDT", "proposal_ttl_min": "предложение действует, мин",
+    "btc_filter": "фильтр BTC", "coins": "монеты",
+}
+
+
+def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) -> dict:
+    """Проверяет изменения настроек; возвращает их в нужных типах или бросает ValueError.
+
+    extra_coins — монеты из COINS в .env, которых нет в стандартном списке: их тоже можно выбирать.
+    """
+    allowed = [*COINS, *(c for c in extra_coins if c not in COINS)]
+    out = {}
+    for key, value in changes.items():
+        if key in LIMITS:
+            kind, lo, hi = LIMITS[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{LABELS[key]}: нужно число")
+            if kind is int and value != int(value):
+                raise ValueError(f"{LABELS[key]}: нужно целое число")
+            if not lo <= value <= hi:
+                raise ValueError(f"{LABELS[key]}: от {lo:g} до {hi:g}")
+            out[key] = kind(value)
+        elif key == "btc_filter":
+            if not isinstance(value, bool):
+                raise ValueError("фильтр BTC: нужно да или нет")
+            out[key] = value
+        elif key == "coins":
+            if not isinstance(value, list) or not all(isinstance(c, str) for c in value):
+                raise ValueError("монеты: нужен список")
+            wanted = {c.strip().upper() for c in value}
+            unknown = wanted - set(allowed)
+            if unknown:
+                raise ValueError(f"неизвестные монеты: {', '.join(sorted(unknown))}")
+            if not wanted:
+                raise ValueError("выберите хотя бы одну монету")
+            out[key] = [c for c in allowed if c in wanted]
+        else:
+            raise ValueError(f"настройку «{key}» менять нельзя")
+    merged = {**current, **out}
+    if merged["max_total_risk_pct"] < merged["risk_pct"]:
+        raise ValueError("общий риск не может быть меньше риска на сделку")
+    return out
+
+
+def _show(value) -> str:
+    if isinstance(value, bool):
+        return "вкл" if value else "выкл"
+    if isinstance(value, list):
+        return f"{len(value)} шт."
+    return f"{value:g}".replace(".", ",")
+
+
 class Bot:
     def __init__(self, cfg: Config, exchange, store: Store, notifier: Notifier | None = None):
         self.cfg, self.ex, self.store = cfg, exchange, store
         self.notifier = notifier or LogNotifier()
         self.lock = threading.RLock()
         self.params = bt.Params(fast=cfg.ema_fast, slow=cfg.ema_slow, atr_mult=cfg.atr_mult, risk=cfg.risk_pct / 100)
+        self.defaults = self.settings()  # значения из .env — к ним возвращает «Сбросить»
+        saved = self.store.get("settings", {})
+        try:
+            self._apply(check_settings(saved, self.defaults, self.defaults["coins"]))
+        except ValueError as exc:  # границы могли измениться в новой версии — тогда работаем по .env
+            log.warning("сохранённые настройки не применены: %s", exc)
+
+    # --- настройки -----------------------------------------------------------
+    def settings(self) -> dict:
+        return {k: (list(v) if isinstance(v := getattr(self.cfg, k), list) else v) for k in EDITABLE}
+
+    def _apply(self, values: dict) -> None:
+        for key, value in values.items():
+            setattr(self.cfg, key, value)
+        self.params = replace(self.params, risk=self.cfg.risk_pct / 100)
+
+    def update_settings(self, changes: dict) -> str:
+        with self.lock:
+            before = self.settings()
+            values = check_settings(changes, before, self.defaults["coins"])
+            self._apply(values)
+            after = self.settings()
+            self.store.set("settings", {k: v for k, v in after.items() if v != self.defaults[k]})
+            diff = [f"{LABELS[k]}: {_show(before[k])} → {_show(after[k])}" for k in EDITABLE if before[k] != after[k]]
+            if not diff:
+                return "Без изменений"
+            self.notify("⚙️ Настройки изменены из приложения\n" + "\n".join(diff))
+            return "Настройки сохранены"
+
+    def reset_settings(self) -> str:
+        return self.update_settings(dict(self.defaults))
+
+    def watched_coins(self) -> list[str]:
+        """Монеты из настроек плюс те, где открыта позиция: выход по сигналу работает всегда."""
+        held = [p.coin for p in self.store.positions() if p.coin not in self.cfg.coins]
+        return [*self.cfg.coins, *held]
 
     # --- состояние ---------------------------------------------------------
     @property
@@ -137,7 +241,7 @@ class Bot:
     def scan(self) -> dict[str, dict]:
         regime_src = self.ex.candles("BTCUSDT", "1d", 400) if self.cfg.btc_filter else None
         out = {}
-        for coin in self.cfg.coins:
+        for coin in self.watched_coins():
             try:
                 df = self.ex.candles(self.symbol(coin), "4h", 1000)
                 regime = btc_regime(regime_src, df.index) if regime_src is not None else None
@@ -178,7 +282,8 @@ class Bot:
                 self.pause("дневной лимит убытка")
                 self.notify(f"⛔ Дневной убыток достиг {self.cfg.daily_loss_limit_pct}% — новые сделки на паузе. "
                             "Снять: /resume")
-            entries = [(c, s) for c, s in signals.items() if s.get("cross_up") and s.get("regime_ok")]
+            entries = [(c, s) for c, s in signals.items()
+                       if c in self.cfg.coins and s.get("cross_up") and s.get("regime_ok")]
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
 
@@ -392,10 +497,11 @@ class Bot:
             "last_bar": self.store.get("last_bar", 0),
             "trades": self.store.trades(30),
             "events": self.store.events(30),
-            "settings": {"risk_pct": self.cfg.risk_pct, "atr_mult": self.cfg.atr_mult, "ema_fast": self.cfg.ema_fast,
-                         "ema_slow": self.cfg.ema_slow, "btc_filter": self.cfg.btc_filter,
-                         "capital_usdt": self.cfg.capital_usdt, "max_positions": self.cfg.max_positions,
-                         "coins": self.cfg.coins},
+            "settings": {**self.settings(), "atr_mult": self.cfg.atr_mult,
+                         "ema_fast": self.cfg.ema_fast, "ema_slow": self.cfg.ema_slow},
+            "settings_defaults": self.defaults,
+            "settings_limits": {k: {"min": lo, "max": hi} for k, (_, lo, hi) in LIMITS.items()},
+            "all_coins": [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)],
         }
 
 

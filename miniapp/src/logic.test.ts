@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { Equity, Position, Settings, Trade } from "./api";
+import type { EditableSettings, Equity, Position, Settings, Trade } from "./api";
 import { dateTime, pct, price, rMultiple, usd } from "./format";
 import {
-  coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows, stopRisk,
+  changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
+  stepValue, stopRisk,
 } from "./logic";
 
-const settings: Settings = {
-  risk_pct: 1, atr_mult: 2, ema_fast: 20, ema_slow: 50, btc_filter: false, capital_usdt: 0, max_positions: 5, coins: [],
+const editable: EditableSettings = {
+  risk_pct: 1, max_positions: 5, max_position_pct: 25, max_total_risk_pct: 5, daily_loss_limit_pct: 3,
+  capital_usdt: 0, proposal_ttl_min: 60, btc_filter: false, coins: ["BTC", "ETH"],
 };
+const settings: Settings = { ...editable, atr_mult: 2, ema_fast: 20, ema_slow: 50 };
 const equity: Equity = { total: 1000, free: 1000, usdt: 1000, invested: 0, unrealized: 0 };
 
 describe("format", () => {
@@ -110,5 +113,21 @@ describe("positions", () => {
     expect(nextCandleClose(0)).toBe(14400);
     expect(nextCandleClose(14399)).toBe(14400);
     expect(nextCandleClose(14400)).toBe(28800);
+  });
+});
+
+describe("settings form", () => {
+  it("sends only what changed", () => {
+    expect(changedSettings({ ...editable }, editable)).toEqual({});
+    expect(changedSettings({ ...editable, risk_pct: 0.5, coins: ["BTC"] }, editable))
+      .toEqual({ risk_pct: 0.5, coins: ["BTC"] });
+    expect(changedSettings({ ...editable, coins: ["BTC", "ETH"] }, editable)).toEqual({});
+  });
+  it("steps within limits without float noise", () => {
+    expect(stepValue(1, -1, 0.25, 0.1, 3)).toBe(0.75);
+    expect(stepValue(0.1, 1, 0.25, 0.1, 3)).toBe(0.25);
+    expect(stepValue(0.25, -1, 0.25, 0.1, 3)).toBe(0.1);
+    expect(stepValue(3, 1, 0.25, 0.1, 3)).toBe(3);
+    expect(stepValue(0.3, 1, 0.1, 0, 1)).toBe(0.4);
   });
 });

@@ -5,14 +5,14 @@ import { confirmAction } from "../telegram";
 import { PauseIcon, PlayIcon } from "./icons";
 import { Button, Chip, Segmented, StatusDot } from "./ui";
 
-export type Act = (a: () => Promise<{ message: string }>) => void;
+export type Act = (a: () => Promise<{ message: string }>) => Promise<boolean>;
 
 const MODES: [Mode, string][] = [["signals", "Сигналы"], ["confirm", "Вручную"], ["auto", "Авто"]];
 
 export function ModeSwitch({ status: s, busy, act }: { status: Status; busy: boolean; act: Act }) {
   const setMode = async (mode: Mode) => {
     if (mode === "auto" && !(await confirmAction("Бот будет сам покупать по сигналам, без подтверждения. Включить?"))) return;
-    act(() => api.setMode(mode));
+    void act(() => api.setMode(mode));
   };
   return <Segmented label="Режим бота" options={MODES} value={s.mode} disabled={busy} onChange={(m) => void setMode(m)} />;
 }
@@ -21,7 +21,7 @@ export function PauseButton({ status: s, busy, act, compact }: { status: Status;
   const label = s.paused ? "Продолжить" : "Пауза";
   return (
     <Button variant={s.paused ? "primary" : "ghost"} className={compact ? "icon-btn" : "pause-btn"} disabled={busy}
-      aria-label={label} title={label} onClick={() => act(s.paused ? api.resume : api.pause)}>
+      aria-label={label} title={label} onClick={() => void act(s.paused ? api.resume : api.pause)}>
       {s.paused ? <PlayIcon size={18} /> : <PauseIcon size={18} />}
       {!compact && <span>{label}</span>}
     </Button>

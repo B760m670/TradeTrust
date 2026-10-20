@@ -1,5 +1,5 @@
 // Логика отображения: состояние монеты, план входа, риск, статистика журнала. Без React — покрыто тестами.
-import type { Equity, Position, Settings, Signal, Trade } from "./api";
+import type { EditableSettings, Equity, Position, Settings, Signal, Trade } from "./api";
 
 export type ChipTone = "up" | "down" | "accent" | "amber" | "muted";
 export type CoinKind = "entry" | "held" | "filtered" | "up" | "down" | "none";
@@ -137,3 +137,20 @@ export const ENV_LABELS: Record<string, { label: string; real: boolean }> = {
   testnet: { label: "Тестнет Bybit", real: false },
   mainnet: { label: "Реальный счёт", real: true },
 };
+
+/** Что изменилось в форме настроек по сравнению с сохранённым на сервере. */
+export function changedSettings(draft: EditableSettings, saved: EditableSettings): Partial<EditableSettings> {
+  const out: Partial<EditableSettings> = {};
+  for (const key of Object.keys(draft) as (keyof EditableSettings)[]) {
+    const a = draft[key], b = saved[key];
+    const same = Array.isArray(a) && Array.isArray(b) ? a.join() === b.join() : a === b;
+    if (!same) (out as Record<string, unknown>)[key] = a;
+  }
+  return out;
+}
+
+/** Шаг вверх/вниз с округлением до шага и в пределах границ. */
+export function stepValue(value: number, delta: number, step: number, min: number, max: number): number {
+  const next = Math.round((value + delta * step) / step) * step;
+  return Math.min(max, Math.max(min, Number(next.toFixed(6))));
+}

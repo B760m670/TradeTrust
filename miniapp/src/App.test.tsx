@@ -1,14 +1,14 @@
 // Приложение целиком в jsdom: ответ /api/status — настоящий JSON Python-бота (scripts/make_api_fixture.py).
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import status from "../../android/app/src/test/resources/bot_status.json";
 
 vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
-  CHART_COLORS: { FAST: "#00f", SLOW: "#fa0", DOWN: "#f00" },
+  useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
 
-type Call = { url: string; method: string; auth: string | null };
+type Call = { url: string; method: string; auth: string | null; body?: unknown };
 let calls: Call[];
 
 function setWidth(wide: boolean) {
@@ -25,6 +25,7 @@ function installTelegram(initData: string) {
       BackButton: { show: vi.fn(), hide: vi.fn(), onClick: vi.fn(), offClick: vi.fn() },
       showConfirm: (_: string, cb: (ok: boolean) => void) => cb(true),
       setHeaderColor: vi.fn(),
+      CloudStorage: { getItem: (_: string, cb: (e: unknown, v?: string) => void) => cb(null, ""), setItem: vi.fn() },
     },
   };
 }
@@ -32,7 +33,8 @@ function installTelegram(initData: string) {
 beforeEach(() => {
   calls = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
-    calls.push({ url, method: init.method ?? "GET", auth: new Headers(init.headers).get("Authorization") });
+    calls.push({ url, method: init.method ?? "GET", auth: new Headers(init.headers).get("Authorization"),
+      body: init.body ? JSON.parse(init.body as string) : undefined });
     const body = url === "/api/status" ? status
       : url.startsWith("/api/candles") ? { coin: "SOL", time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
@@ -43,6 +45,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
+  delete document.documentElement.dataset.theme;
   vi.unstubAllGlobals();
   vi.resetModules();
   delete window.Telegram;
@@ -68,6 +72,7 @@ describe("mini app", () => {
     expect(calls[0]).toEqual({ url: "/api/status", method: "GET", auth: "tma query_id=1&hash=abc" });
     expect(screen.getByText("Бумажный счёт")).toBeTruthy();
     expect(screen.getAllByText("SOL").length).toBeGreaterThan(0);
+    expect(document.documentElement.dataset.theme).toBe("dark"); // «Авто» — как в Telegram
     expect(screen.getByText("Стоп 80,77")).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Вручную", checked: true })).toBeTruthy();
     expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenCalledWith("#07080D");
@@ -109,5 +114,38 @@ describe("mini app", () => {
     expect(calls.some((c) => c.url === "/api/candles?coin=SOL")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Сигналы" }));
     await screen.findByText("Состояние");
+  });
+
+  it("switches to the light theme and remembers it", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Светлая" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("theme")).toBe("light");
+    expect(window.Telegram!.WebApp.CloudStorage!.setItem).toHaveBeenCalledWith("theme", "light");
+    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenLastCalledWith("#F3F3F7");
+  });
+
+  it("saves only the changed settings after confirmation", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
+    const risk = await screen.findByRole("group", { name: "Риск на сделку" });
+    fireEvent.click(within(risk).getByRole("button", { name: "Больше" }));
+    expect(within(risk).getByText("1,25%")).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "Фильтр BTC" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    const post = calls.find((c) => c.method === "POST")!;
+    expect(post.url).toBe("/api/settings");
+    expect(post.body).toEqual({ risk_pct: 1.25, btc_filter: true });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull());
+  });
+
+  it("will not save an empty coin list", async () => {
+    await renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
+    fireEvent.click(await screen.findByText("Снять все"));
+    expect(screen.getByText("Выберите хотя бы одну монету.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Сохранить" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

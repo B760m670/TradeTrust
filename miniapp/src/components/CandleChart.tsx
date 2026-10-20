@@ -11,22 +11,30 @@ import {
 import { useEffect, useRef } from "react";
 import type { ChartData } from "../api";
 import { price } from "../format";
+import { useTheme, type Theme } from "../theme";
 
-// цвета темы приложения (styles.css: --up, --down, --accent)
-const UP = "#4FE3B0";
-const DOWN = "#FF7A8A";
-const FAST = "#8B7CFF";
-const SLOW = "#F5B86B";
-const TEXT = "rgba(244, 245, 248, 0.45)";
+// те же цвета, что в styles.css (--up, --down, --accent, --faint) для каждой темы
+const PALETTE: Record<Theme, { up: string; down: string; fast: string; slow: string; text: string; grid: string }> = {
+  dark: { up: "#4FE3B0", down: "#FF7A8A", fast: "#8B7CFF", slow: "#F5B86B", text: "rgba(244,245,248,0.45)", grid: "rgba(255,255,255,0.05)" },
+  light: { up: "#0C9A6A", down: "#E0444F", fast: "#6C5CF0", slow: "#E0912B", text: "rgba(17,18,28,0.45)", grid: "rgba(17,18,28,0.06)" },
+};
 const VISIBLE_BARS = 90;
+
+const chartColors = (theme: Theme) => PALETTE[theme];
+
+export function useChartColors() {
+  const { theme } = useTheme();
+  return chartColors(theme);
+}
 
 /** Свечной график TradingView Lightweight Charts: свечи 4ч, EMA, стоп и цена входа. */
 export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; bars?: number }) {
   const box = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (!box.current) return;
-    const text = TEXT;
+    const { up: UP, down: DOWN, fast: FAST, slow, text, grid } = chartColors(theme);
     const chart: IChartApi = createChart(box.current, {
       autoSize: true,
       layout: {
@@ -34,10 +42,10 @@ export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; ba
         textColor: text,
         fontFamily: "'Manrope Variable', system-ui, sans-serif",
       },
-      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.05)" } },
+      grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       crosshair: {
-        vertLine: { color: "rgba(139,124,255,0.4)", labelBackgroundColor: FAST },
-        horzLine: { color: "rgba(139,124,255,0.4)", labelBackgroundColor: FAST },
+        vertLine: { color: FAST, labelBackgroundColor: FAST },
+        horzLine: { color: FAST, labelBackgroundColor: FAST },
       },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
@@ -79,7 +87,7 @@ export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; ba
       }));
     };
     line(data.ema_fast, FAST);
-    line(data.ema_slow, SLOW);
+    line(data.ema_slow, slow);
 
     if (data.position) {
       candles.createPriceLine({ price: data.position.stop, color: DOWN, lineStyle: LineStyle.Dashed, lineWidth: 1,
@@ -91,9 +99,8 @@ export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; ba
     const n = data.time.length;
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
     return () => chart.remove();
-  }, [data, bars]);
+  }, [data, bars, theme]);
 
   return <div ref={box} className="chart" data-testid="chart" />;
 }
 
-export const CHART_COLORS = { FAST, SLOW, DOWN };
