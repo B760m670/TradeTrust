@@ -1,9 +1,11 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
 import { AlertIcon, BookIcon, GearIcon, HomeIcon, TrendIcon } from "./components/icons";
 import { Empty, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
 import { useWide } from "./hooks";
+import { LiveContext, LiveFeed, TickersContext, feedUrl, useTickers } from "./live";
+import { withLivePrices } from "./logic";
 import { Coin } from "./screens/Coin";
 import { Journal } from "./screens/Journal";
 import { Overview } from "./screens/Overview";
@@ -83,7 +85,22 @@ function Loading() {
 }
 
 function Main() {
-  const { status, error, busy, message, clearMessage, act } = useBot();
+  const bot = useBot();
+  const env = bot.status?.env;
+  const [feed, setFeed] = useState<LiveFeed | null>(null);
+  useEffect(() => {
+    if (!env) return;
+    const f = new LiveFeed(feedUrl(env));
+    setFeed(f);
+    return () => f.close();
+  }, [env]);
+  return <LiveContext.Provider value={feed}><Screens {...bot} /></LiveContext.Provider>;
+}
+
+function Screens({ status: botStatus, error, busy, message, clearMessage, act }: ReturnType<typeof useBot>) {
+  const coins = botStatus ? [...new Set([...botStatus.settings.coins, ...botStatus.positions.map((p) => p.coin)])] : [];
+  const tickers = useTickers(coins);
+  const status = useMemo(() => botStatus && withLivePrices(botStatus, tickers), [botStatus, tickers]);
   const wide = useWide();
   const [tab, setTab] = useState<Tab>("overview");
   const [coin, setCoin] = useState<string | null>(null);
@@ -131,15 +148,17 @@ function Main() {
   }
 
   return (
-    <div className={`app ${wide ? "wide" : "narrow"}`}>
-      {wide && <Sidebar tab={tab} onTab={openTab} status={status} busy={busy} act={act} inCoin={!!coin} />}
-      <main className="content">
-        {status && error && <div className="banner"><AlertIcon size={16} />Нет связи с сервером: {error}</div>}
-        <div key={coin ?? tab} className="screen">{body}</div>
-      </main>
-      {!wide && <BottomNav tab={tab} onTab={openTab} inCoin={!!coin} />}
-      {message && <Toast message={message} onClose={clearMessage} />}
-    </div>
+    <TickersContext.Provider value={tickers}>
+      <div className={`app ${wide ? "wide" : "narrow"}`}>
+        {wide && <Sidebar tab={tab} onTab={openTab} status={status} busy={busy} act={act} inCoin={!!coin} />}
+        <main className="content">
+          {status && error && <div className="banner"><AlertIcon size={16} />Нет связи с сервером: {error}</div>}
+          <div key={coin ?? tab} className="screen">{body}</div>
+        </main>
+        {!wide && <BottomNav tab={tab} onTab={openTab} inCoin={!!coin} />}
+        {message && <Toast message={message} onClose={clearMessage} />}
+      </div>
+    </TickersContext.Provider>
   );
 }
 

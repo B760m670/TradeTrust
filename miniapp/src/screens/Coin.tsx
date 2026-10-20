@@ -2,8 +2,9 @@ import { api, type Status } from "../api";
 import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { BackIcon } from "../components/icons";
-import { Button, Card, Chip, CoinAvatar, RangeBar, Tile, Value } from "../components/ui";
+import { Button, Card, Chip, CoinAvatar, Flash, LiveBadge, RangeBar, Tile, Value } from "../components/ui";
 import { pct, price, tone, usd } from "../format";
+import { useLiveTickers } from "../live";
 import { coinState, emaGap, entryPlan } from "../logic";
 import { confirmAction } from "../telegram";
 
@@ -24,6 +25,7 @@ export function Coin({ coin, status: s, busy, act, wide, onBack }: Props) {
   const set = s.settings;
   const gap = sig ? emaGap(sig) : null;
   const now = pos?.price ?? sig?.price;
+  const ticker = useLiveTickers()[coin];
 
   const close = async () => {
     if (await confirmAction(`Закрыть ${coin}? Бот отменит стоп и продаст по рынку.`)) act(() => api.close(coin));
@@ -38,7 +40,12 @@ export function Coin({ coin, status: s, busy, act, wide, onBack }: Props) {
           <h1>{coin}<span className="muted">/USDT</span></h1>
           <Chip tone={state.tone}>{state.label}</Chip>
         </div>
-        <span className="coin-price num">{price(now)}</span>
+        <div className="row-end">
+          <Flash value={now} className="coin-price num">{price(now)}</Flash>
+          {ticker ? <span className={`small num tone-${tone(ticker.change24h)}`}>{pct(ticker.change24h, true)} за 24 ч</span>
+            : null}
+          <LiveBadge on={!!ticker} />
+        </div>
       </header>
 
       <div className="coin-grid">

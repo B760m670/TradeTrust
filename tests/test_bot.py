@@ -622,3 +622,37 @@ def test_api_settings_endpoint(make_bot):
         assert status["settings_defaults"]["daily_loss_limit_pct"] == 3.0 and "SOL" in status["all_coins"]
     finally:
         server.shutdown()
+
+
+# --- капитал во времени и ежедневная сводка ------------------------------------
+
+def test_equity_is_recorded_on_each_candle(make_bot):
+    bot, ex, _ = make_bot("auto")
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    history = bot.status()["equity_history"]
+    assert len(history) == 1 and history[0][1] == pytest.approx(1000, abs=1)
+
+
+def test_daily_report_once_a_day_at_chosen_hour(make_bot):
+    bot, ex, rec = make_bot("auto")
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    bot.update_settings({"report_hour_utc": 9})
+    rec.sent.clear()
+    day = 1792540800  # 2026-10-21 00:00 UTC
+    assert not bot.maybe_daily_report(day + 8 * 3600)
+    assert bot.maybe_daily_report(day + 9 * 3600 + 60)
+    assert not bot.maybe_daily_report(day + 9 * 3600 + 600)  # второй раз в тот же день — нет
+    assert bot.maybe_daily_report(day + 86400 + 9 * 3600)
+    text = rec.sent[0][0]
+    assert "Сводка за сутки" in text and "Капитал" in text and "SOL" in text
+    assert not any("Сводка" in e["text"] for e in bot.store.events())  # журнал событий не засоряется
+    bot.update_settings({"daily_report": False})
+    assert not bot.maybe_daily_report(day + 2 * 86400 + 9 * 3600)
+
+
+def test_report_hour_is_bounded(make_bot):
+    bot, _, _ = make_bot("auto")
+    with pytest.raises(ValueError):
+        bot.update_settings({"report_hour_utc": 24})

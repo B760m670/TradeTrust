@@ -11,7 +11,7 @@ import time
 import requests
 
 from .config import MODES
-from .engine import Bot, fmt
+from .engine import MODE_NAMES, Bot, fmt
 
 log = logging.getLogger("tradetrust.telegram")
 
@@ -20,13 +20,13 @@ HELP = """Команды:
 /status — баланс, режим, позиции
 /signals — что система видит на последней свече
 /trades — последние сделки
+/report — сводка за сутки
 /mode signals|confirm|auto — режим работы
 /pause — не открывать новые сделки
 /resume — снять паузу
 /close BTC — закрыть позицию по рынку
 /closeall — закрыть все позиции"""
 
-MODE_NAMES = {"signals": "только сигналы", "confirm": "с подтверждением", "auto": "автоматически"}
 
 
 class Telegram:
@@ -140,6 +140,8 @@ class Telegram:
             return self.status_text()
         if cmd == "/signals":
             return self.signals_text()
+        if cmd == "/report":
+            return bot.daily_report_text()
         if cmd == "/trades":
             trades = bot.store.trades(10)
             if not trades:

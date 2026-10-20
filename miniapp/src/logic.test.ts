@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { EditableSettings, Equity, Position, Settings, Trade } from "./api";
+import type { EditableSettings, Equity, Position, Settings, Status, Trade } from "./api";
 import { dateTime, pct, price, rMultiple, usd } from "./format";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
-  stepValue, stopRisk,
+  localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
 } from "./logic";
 
 const editable: EditableSettings = {
   risk_pct: 1, max_positions: 5, max_position_pct: 25, max_total_risk_pct: 5, daily_loss_limit_pct: 3,
-  capital_usdt: 0, proposal_ttl_min: 60, btc_filter: false, coins: ["BTC", "ETH"],
+  capital_usdt: 0, proposal_ttl_min: 60, report_hour_utc: 7, btc_filter: false, daily_report: true, coins: ["BTC", "ETH"],
 };
 const settings: Settings = { ...editable, atr_mult: 2, ema_fast: 20, ema_slow: 50 };
 const equity: Equity = { total: 1000, free: 1000, usdt: 1000, invested: 0, unrealized: 0 };
@@ -129,5 +129,38 @@ describe("settings form", () => {
     expect(stepValue(0.25, -1, 0.25, 0.1, 3)).toBe(0.1);
     expect(stepValue(3, 1, 0.25, 0.1, 3)).toBe(3);
     expect(stepValue(0.3, 1, 0.1, 0, 1)).toBe(0.4);
+  });
+});
+
+describe("withLivePrices", () => {
+  const status = {
+    equity: { total: 1000, free: 900, usdt: 900, invested: 100, unrealized: 0 },
+    positions: [{ coin: "SOL", qty: 1, entry: 100, stop: 90, price: 100, pnl_usdt: 0, opened_at: 0 }],
+    signals: { SOL: { price: 100 }, ETH: { error: "x" }, BTC: { price: 50_000 } },
+  } as unknown as Status;
+  it("moves positions, equity and signal prices to the live price", () => {
+    const s = withLivePrices(status, { SOL: { price: 110 }, ETH: { price: 2000 } });
+    expect(s.positions[0]).toMatchObject({ price: 110, pnl_usdt: 10 });
+    expect(s.equity).toMatchObject({ total: 1010, invested: 110, unrealized: 10, free: 900 });
+    expect(s.signals.SOL.price).toBe(110);
+    expect(s.signals.ETH).toEqual({ error: "x" });
+    expect(s.signals.BTC.price).toBe(50_000);
+  });
+  it("leaves the status alone without live data", () => {
+    expect(withLivePrices(status, {})).toBe(status);
+  });
+});
+
+describe("journal and report helpers", () => {
+  it("finds the worst drop from a peak", () => {
+    expect(maxDrawdown([1000, 1100, 990, 1050, 1200, 1140])).toBeCloseTo(-10, 9);
+    expect(maxDrawdown([1000, 1010, 1020])).toBe(0);
+    expect(maxDrawdown([])).toBe(0);
+  });
+  it("shows the report hour in local time", () => {
+    expect(localTime(7, 240)).toBe("11:00");
+    expect(localTime(22, 240)).toBe("02:00");
+    expect(localTime(0, -300)).toBe("19:00");
+    expect(localTime(7, 330)).toBe("12:30");
   });
 });

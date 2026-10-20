@@ -62,13 +62,16 @@ LIMITS: dict[str, tuple[type, float, float]] = {
     "daily_loss_limit_pct": (float, 1.0, 10.0),
     "capital_usdt": (float, 0.0, 10_000_000.0),
     "proposal_ttl_min": (int, 15, 240),
+    "report_hour_utc": (int, 0, 23),
 }
-EDITABLE = (*LIMITS, "btc_filter", "coins")
+FLAGS = ("btc_filter", "daily_report")
+EDITABLE = (*LIMITS, *FLAGS, "coins")
 LABELS = {
     "risk_pct": "риск на сделку, %", "max_positions": "позиций максимум", "max_position_pct": "в одной монете, %",
     "max_total_risk_pct": "общий риск, %", "daily_loss_limit_pct": "дневной лимит убытка, %",
     "capital_usdt": "капитал бота, USDT", "proposal_ttl_min": "предложение действует, мин",
     "btc_filter": "фильтр BTC", "coins": "монеты",
+    "daily_report": "ежедневный отчёт", "report_hour_utc": "время отчёта (UTC), ч",
 }
 
 
@@ -89,9 +92,9 @@ def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) ->
             if not lo <= value <= hi:
                 raise ValueError(f"{LABELS[key]}: от {lo:g} до {hi:g}")
             out[key] = kind(value)
-        elif key == "btc_filter":
+        elif key in FLAGS:
             if not isinstance(value, bool):
-                raise ValueError("фильтр BTC: нужно да или нет")
+                raise ValueError(f"{LABELS[key]}: нужно да или нет")
             out[key] = value
         elif key == "coins":
             if not isinstance(value, list) or not all(isinstance(c, str) for c in value):
@@ -109,6 +112,9 @@ def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) ->
     if merged["max_total_risk_pct"] < merged["risk_pct"]:
         raise ValueError("общий риск не может быть меньше риска на сделку")
     return out
+
+
+MODE_NAMES = {"signals": "только сигналы", "confirm": "с подтверждением", "auto": "автоматически"}
 
 
 def _show(value) -> str:
@@ -286,6 +292,54 @@ class Bot:
                        if c in self.cfg.coins and s.get("cross_up") and s.get("regime_ok")]
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
+            self.record_equity()
+
+    # --- капитал во времени и ежедневный отчёт ---------------------------------
+    def record_equity(self) -> None:
+        """Точка для графика капитала: после каждой 4ч свечи и при запуске."""
+        try:
+            self.store.add_equity(now(), round(self.equity()["total"], 2))
+        except Exception:
+            log.exception("record_equity")
+
+    def daily_report_text(self) -> str:
+        eq = self.equity()
+        ts = now()
+        day_ago = self.store.equity_before(ts - 86400)
+        change = f" ({eq['total'] - day_ago:+,.2f} за сутки)" if day_ago is not None else ""
+        lines = ["📊 Сводка за сутки", f"Капитал: {eq['total']:,.2f} USDT{change}"]
+        closed = [t for t in self.store.trades(50) if t["closed_at"] >= ts - 86400]
+        if closed:
+            total = sum(t["pnl_usdt"] for t in closed)
+            lines.append(f"Закрыто сделок: {len(closed)}, итог {total:+,.2f} USDT")
+        positions = self.store.positions()
+        if positions:
+            lines.append(f"Открыто позиций: {len(positions)}")
+            for p in positions:
+                price = eq["prices"][p.coin]
+                lines.append(f"  • {p.coin}: {(price - p.entry) * p.qty:+,.2f} USDT ({(price / p.entry - 1) * 100:+.1f}%), "
+                             f"до стопа {(1 - p.stop / price) * 100:.1f}%")
+        else:
+            lines.append("Открытых позиций нет")
+        signals = self.store.get("signals", {})
+        ups = sum(1 for c, s in signals.items() if c in self.cfg.coins and not s.get("error") and not s.get("trend_down"))
+        lines.append(f"Монет в росте: {ups} из {len(self.cfg.coins)}")
+        state = f"пауза ({self.paused})" if self.paused else "работает"
+        lines.append(f"Режим: {MODE_NAMES.get(self.mode, self.mode)}, бот {state}")
+        return "\n".join(lines)
+
+    def maybe_daily_report(self, ts: float | None = None) -> bool:
+        """Раз в сутки в выбранный час присылает сводку. Возвращает True, если отправил."""
+        ts = time.time() if ts is None else ts
+        day, hour = time.strftime("%Y-%m-%d", time.gmtime(ts)), time.gmtime(ts).tm_hour
+        if not self.cfg.daily_report or hour != self.cfg.report_hour_utc or self.store.get("report_day") == day:
+            return False
+        self.store.set("report_day", day)
+        try:
+            self.notifier.send(self.daily_report_text())  # в журнал событий сводку не пишем
+        except Exception:
+            log.exception("daily report")
+        return True
 
     def handle_entry_signal(self, coin: str, s: dict) -> None:
         price, stop = s["price"], s["price"] - self.cfg.atr_mult * s["atr"]
@@ -502,6 +556,7 @@ class Bot:
             "settings_defaults": self.defaults,
             "settings_limits": {k: {"min": lo, "max": hi} for k, (_, lo, hi) in LIMITS.items()},
             "all_coins": [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)],
+            "equity_history": self.store.equity_history(now() - 90 * 86400),
         }
 
 

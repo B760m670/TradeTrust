@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type ChartData, type Status } from "../api";
+import { useLiveCandle } from "../live";
 import { CandleChart, useChartColors } from "./CandleChart";
 import { Card, Empty, Skeleton } from "./ui";
 
@@ -25,10 +26,11 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   const { data, error, held } = useChart(coin, status);
   const set = status.settings;
   const colors = useChartColors();
+  const live = useLiveCandle(coin);
   return (
     <Card title={title} aside={aside} className={`chart-card ${tall ? "tall" : ""} ${className ?? ""}`}>
       <div className="chart-area">
-        {data ? <CandleChart data={data} /> : error ? <Empty title="График не загрузился">{error}</Empty> : <Skeleton height="100%" />}
+        {data ? <CandleChart data={data} live={live} /> : error ? <Empty title="График не загрузился">{error}</Empty> : <Skeleton height="100%" />}
       </div>
       <div className="legend">
         <span><i style={{ background: colors.fast }} />EMA {set.ema_fast}</span>

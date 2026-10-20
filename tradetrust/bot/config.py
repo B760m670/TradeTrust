@@ -37,6 +37,8 @@ class Config:
     max_total_risk_pct: float = 5.0    # суммарный риск по всем открытым позициям
     daily_loss_limit_pct: float = 3.0  # дневной убыток, после которого бот встаёт на паузу
     proposal_ttl_min: int = 60
+    daily_report: bool = True          # сводка в Telegram раз в сутки
+    report_hour_utc: int = 7           # в какой час (UTC) её присылать
     telegram_token: str = ""
     telegram_chat_id: str = ""
     api_token: str = ""
@@ -69,6 +71,8 @@ class Config:
             max_total_risk_pct=_float("MAX_TOTAL_RISK_PCT", 5.0),
             daily_loss_limit_pct=_float("DAILY_LOSS_LIMIT_PCT", 3.0),
             proposal_ttl_min=int(_float("PROPOSAL_TTL_MIN", 60)),
+            daily_report=_env("DAILY_REPORT", "1").lower() in ("1", "true", "yes", "да"),
+            report_hour_utc=int(_float("REPORT_HOUR_UTC", 7)) % 24,
             telegram_token=_env("TELEGRAM_TOKEN"),
             telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
             api_token=_env("API_TOKEN"),

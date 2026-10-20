@@ -46,6 +46,7 @@ def main() -> None:
 
     bot.reconcile()
     bot.on_candle_close()  # если сервер перезапускался — обработать последнюю закрытую свечу
+    bot.record_equity()
     next_close = next_bar_close()
     last_error, last_error_at = "", 0.0
     while True:
@@ -55,6 +56,7 @@ def main() -> None:
             if time.time() >= next_close:
                 bot.on_candle_close()
                 next_close = next_bar_close()
+            bot.maybe_daily_report()
         except Exception as exc:
             log.exception("main loop")
             # одна и та же ошибка (например, биржа недоступна) — не чаще раза в час

@@ -6,10 +6,12 @@ import {
   createChart,
   type AutoscaleInfo,
   type IChartApi,
+  type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
 import type { ChartData } from "../api";
+import type { LiveCandle } from "../live";
 import { price } from "../format";
 import { useTheme, type Theme } from "../theme";
 
@@ -28,8 +30,19 @@ export function useChartColors() {
 }
 
 /** Свечной график TradingView Lightweight Charts: свечи 4ч, EMA, стоп и цена входа. */
-export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; bars?: number }) {
+export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartData; bars?: number; live?: LiveCandle | null }) {
   const box = useRef<HTMLDivElement>(null);
+  const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const lastClosed = data.time[data.time.length - 1] ?? 0;
+
+  // формирующаяся свеча: обновляется каждую секунду, закрытые свечи не трогает
+  const applyLive = (c: LiveCandle | null | undefined) => {
+    if (!c || !series.current || c.time <= lastClosed) return;
+    series.current.update({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close });
+  };
+  useEffect(() => applyLive(live), [live]);
   const { theme } = useTheme();
 
   useEffect(() => {
@@ -97,8 +110,13 @@ export function CandleChart({ data, bars = VISIBLE_BARS }: { data: ChartData; ba
     }
 
     const n = data.time.length;
+    series.current = candles;
+    applyLive(liveRef.current);
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
-    return () => chart.remove();
+    return () => {
+      series.current = null;
+      chart.remove();
+    };
   }, [data, bars, theme]);
 
   return <div ref={box} className="chart" data-testid="chart" />;

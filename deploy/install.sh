@@ -183,11 +183,38 @@ if [ "$(docker inspect -f '{{.State.Running}} {{.RestartCount}}' "$(docker compo
   exit 1
 fi
 
+say "Включаю автообновление (раз в час)…"
+cat > /etc/systemd/system/tradetrust-update.service <<UNIT
+[Unit]
+Description=TradeTrust: обновить бота, если вышла новая версия
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$DIR
+ExecStart=$DIR/deploy/update.sh
+UNIT
+# в :35 — подальше от закрытия 4ч свечей (00, 04, 08… UTC), когда бот принимает решения
+cat > /etc/systemd/system/tradetrust-update.timer <<'UNIT'
+[Unit]
+Description=TradeTrust: проверка обновлений раз в час
+
+[Timer]
+OnCalendar=*-*-* *:35:00
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now tradetrust-update.timer >/dev/null
+
 API_TOKEN=$(env_get API_TOKEN)
 say "Готово."
 echo "Логи:        cd $DIR && docker compose logs -f bot"
 echo "Настройки:   nano $DIR/.env, затем: cd $DIR && docker compose up -d"
-echo "Обновление:  повторно запустите этот скрипт"
+echo "Обновление:  автоматически раз в час (журнал: journalctl -u tradetrust-update)"
+echo "             отключить: systemctl disable --now tradetrust-update.timer"
 if [ -n "${DOMAIN:-}" ]; then
   echo
   echo "Мини-приложение: откройте своего бота в Telegram — кнопка «Открыть» слева от поля ввода"

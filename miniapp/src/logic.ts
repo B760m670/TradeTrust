@@ -1,5 +1,5 @@
 // Логика отображения: состояние монеты, план входа, риск, статистика журнала. Без React — покрыто тестами.
-import type { EditableSettings, Equity, Position, Settings, Signal, Trade } from "./api";
+import type { EditableSettings, Equity, Position, Settings, Signal, Status, Trade } from "./api";
 
 export type ChipTone = "up" | "down" | "accent" | "amber" | "muted";
 export type CoinKind = "entry" | "held" | "filtered" | "up" | "down" | "none";
@@ -153,4 +153,43 @@ export function changedSettings(draft: EditableSettings, saved: EditableSettings
 export function stepValue(value: number, delta: number, step: number, min: number, max: number): number {
   const next = Math.round((value + delta * step) / step) * step;
   return Math.min(max, Math.max(min, Number(next.toFixed(6))));
+}
+
+/** Статус бота с живыми ценами: позиции, их результат, капитал и цены в сигналах. */
+export function withLivePrices(s: Status, prices: Record<string, { price: number }>): Status {
+  if (Object.keys(prices).length === 0) return s;
+  let delta = 0;
+  const positions = s.positions.map((p) => {
+    const live = prices[p.coin]?.price;
+    if (!live) return p;
+    delta += (live - p.price) * p.qty;
+    return { ...p, price: live, pnl_usdt: (live - p.entry) * p.qty };
+  });
+  const signals = Object.fromEntries(Object.entries(s.signals).map(([coin, sig]) => {
+    const live = prices[coin]?.price;
+    return [coin, live && !sig.error ? { ...sig, price: live } : sig];
+  }));
+  const equity = {
+    ...s.equity,
+    total: s.equity.total + delta,
+    invested: s.equity.invested + delta,
+    unrealized: s.equity.unrealized + delta,
+  };
+  return { ...s, positions, signals, equity };
+}
+
+/** Худшее падение капитала от предыдущего максимума, в % (отрицательное число или 0). */
+export function maxDrawdown(values: number[]): number {
+  let peak = -Infinity, worst = 0;
+  for (const v of values) {
+    peak = Math.max(peak, v);
+    if (peak > 0) worst = Math.min(worst, (v / peak - 1) * 100);
+  }
+  return worst;
+}
+
+/** Час отчёта: сервер хранит UTC, человек видит своё время. offsetMin — смещение пояса в минутах. */
+export function localTime(hourUtc: number, offsetMin: number): string {
+  const m = (((hourUtc * 60 + offsetMin) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }

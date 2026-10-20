@@ -313,7 +313,7 @@ button.card { text-align: left; width: 100%; }
 .sig-name { display: flex; flex-direction: column; min-width: 0; }
 .sig-state { justify-self: end; }
 .col-wide { display: none; }
-.app.wide .sig-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) 130px; }
+.app.wide .sig-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 0.8fr) 130px; }
 .app.wide .col-wide { display: block; }
 .app.wide .narrow-only { display: none; }
 
@@ -416,12 +416,34 @@ button.card { text-align: left; width: 100%; }
 .settings-grid { display: flex; flex-direction: column; gap: 12px; }
 .settings { padding-bottom: 72px; }
 
+/* ---------- живые цены ---------- */
+.flash { align-self: flex-start; margin: 0 -4px; padding: 0 4px; border-radius: 6px; }
+.flash-up { animation: flash-up 1.1s ease-out; }
+.flash-down { animation: flash-down 1.1s ease-out; }
+.live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; vertical-align: middle;
+  background: var(--up-soft); color: var(--up); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.live-badge .dot { width: 6px; height: 6px; animation: pulse 2s ease-in-out infinite; }
+.page-head h1 .live-badge { margin-left: 8px; }
+.sig-price { display: flex; flex-direction: column; min-width: 0; }
+.coin-head .row-end { gap: 4px; }
+
+/* ---------- капитал в журнале ---------- */
+.equity-card { margin-bottom: 16px; }
+.equity-area { height: 200px; }
+.app.wide .equity-area { height: 260px; }
+.equity-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.equity-foot strong { color: var(--text); margin-left: 4px; }
+.equity-foot strong.tone-down { color: var(--down); }
+.field.disabled { opacity: 0.45; pointer-events: none; }
+
 /* ---------- анимации ---------- */
 @keyframes screen-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(79, 227, 176, 0.5); } 50% { box-shadow: 0 0 0 6px rgba(79, 227, 176, 0); } }
+@keyframes flash-up { from { color: var(--up); background: var(--up-soft); } }
+@keyframes flash-down { from { color: var(--down); background: var(--down-soft); } }
 @keyframes toast-in-bar { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 16px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0); } }
 
