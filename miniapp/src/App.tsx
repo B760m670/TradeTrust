@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
-import { AlertIcon, BookIcon, GearIcon, HomeIcon, TrendIcon } from "./components/icons";
+import { AlertIcon, BookIcon, GearIcon, HomeIcon, TrendIcon, WalletIcon } from "./components/icons";
 import { Empty, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
 import { useWide } from "./hooks";
@@ -9,16 +9,18 @@ import { withLivePrices } from "./logic";
 import { Coin } from "./screens/Coin";
 import { Journal } from "./screens/Journal";
 import { Overview } from "./screens/Overview";
+import { Portfolio } from "./screens/Portfolio";
 import { Settings } from "./screens/Settings";
 import { Signals } from "./screens/Signals";
 import { haptic, initData, tg } from "./telegram";
 import { ThemeContext, useThemeState } from "./theme";
 import { useBot } from "./useBot";
 
-export type Tab = "overview" | "signals" | "journal" | "settings";
+export type Tab = "overview" | "portfolio" | "signals" | "journal" | "settings";
 
 const TABS: { id: Tab; text: string; icon: ReactNode }[] = [
   { id: "overview", text: "Обзор", icon: <HomeIcon /> },
+  { id: "portfolio", text: "Портфель", icon: <WalletIcon /> },
   { id: "signals", text: "Сигналы", icon: <TrendIcon /> },
   { id: "journal", text: "Журнал", icon: <BookIcon /> },
   { id: "settings", text: "Настройки", icon: <GearIcon /> },
@@ -137,6 +139,8 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
       : <Loading />;
   } else if (coin) {
     body = <Coin coin={coin} status={status} busy={busy} act={act} wide={wide} onBack={() => setCoin(null)} />;
+  } else if (tab === "portfolio") {
+    body = <Portfolio />;
   } else if (tab === "signals") {
     body = <Signals status={status} onOpenCoin={openCoin} />;
   } else if (tab === "journal") {

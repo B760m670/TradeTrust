@@ -68,6 +68,9 @@ class FakeExchange:
     def balance(self, coin):
         return self.balances.get(coin, 0.0)
 
+    def holdings(self):
+        return {c: {"qty": q, "usd": None} for c, q in self.balances.items()}
+
     def market_buy(self, symbol, coin, qty):
         price = self.prices[symbol]
         self.balances["USDT"] -= float(qty) * price
@@ -656,3 +659,38 @@ def test_report_hour_is_bounded(make_bot):
     bot, _, _ = make_bot("auto")
     with pytest.raises(ValueError):
         bot.update_settings({"report_hour_utc": 24})
+
+
+# --- портфель ------------------------------------------------------------------
+
+def test_portfolio_shows_whole_account_and_marks_bot_positions(make_bot):
+    bot, ex, _ = make_bot("auto", capital_usdt=300.0, max_position_pct=100.0)
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    ex.balances["SOL"] += 1.0          # монеты, купленные владельцем вручную
+    ex.balances["DOGE"] = 1e-9         # пыль
+    ex.prices["DOGEUSDT"] = 0.1
+    ex.balances["XYZ"] = 5.0           # монета без пары к USDT — без цены, но в списке
+    pf = bot.portfolio()
+    coins = {a["coin"]: a for a in pf["assets"]}
+    assert set(coins) == {"USDT", "SOL", "XYZ"}
+    assert coins["XYZ"]["value"] is None and pf["assets"][-1]["coin"] == "XYZ"
+    pos = bot.store.position("SOL")
+    assert coins["SOL"]["bot_qty"] == pytest.approx(pos.qty)
+    assert coins["SOL"]["qty"] == pytest.approx(ex.balances["SOL"]) and coins["SOL"]["qty"] > pos.qty + 0.99
+    assert coins["USDT"]["stable"] and coins["USDT"]["price"] == 1.0
+    assert pf["total"] == pytest.approx(sum(a["value"] or 0 for a in pf["assets"]))
+    assert pf["total"] > pf["bot"]["capital"]  # весь счёт больше, чем часть бота
+    assert pf["assets"][0]["value"] >= pf["assets"][1]["value"]
+
+
+def test_api_portfolio(make_bot):
+    bot, _, _ = make_bot("confirm")
+    server = api.serve(bot, "secret-token", 0)
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{server.server_address[1]}/api/portfolio",
+                                     headers={"Authorization": "Bearer secret-token"})
+        pf = json.loads(urllib.request.urlopen(req).read())
+        assert pf["total"] == pytest.approx(1000) and pf["assets"][0]["coin"] == "USDT"
+    finally:
+        server.shutdown()

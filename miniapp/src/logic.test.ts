@@ -3,7 +3,7 @@ import type { EditableSettings, Equity, Position, Settings, Status, Trade } from
 import { dateTime, pct, price, rMultiple, usd } from "./format";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
-  localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
+  allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -162,5 +162,25 @@ describe("journal and report helpers", () => {
     expect(localTime(22, 240)).toBe("02:00");
     expect(localTime(0, -300)).toBe("19:00");
     expect(localTime(7, 330)).toBe("12:30");
+  });
+});
+
+describe("portfolio", () => {
+  const a = (coin: string, value: number | null, stable = false) => ({ coin, value, stable });
+  it("keeps the top assets and folds the tail into «Другие»", () => {
+    const s = allocation([a("USDT", 500), a("BTC", 300), a("ETH", 100), a("SOL", 50), a("ARB", 25), a("OP", 15), a("X", 10), a("Y", null)]);
+    expect(s.map((x) => x.label)).toEqual(["USDT", "BTC", "ETH", "SOL", "ARB", "Другие"]);
+    expect(s[5].value).toBe(25);
+    expect(s.reduce((t, x) => t + x.share, 0)).toBeCloseTo(100, 9);
+    // ровно на одну больше лимита — показываем все, без «Другие» из одной монеты
+    expect(allocation([a("A", 6), a("B", 5), a("C", 4), a("D", 3), a("E", 2), a("F", 1)]).map((x) => x.label))
+      .toEqual(["A", "B", "C", "D", "E", "F"]);
+    expect(allocation([a("A", 0)])).toEqual([]);
+  });
+  it("derives the 24h change of the whole account", () => {
+    const ch = dayChange([a("USDT", 1000, true), a("BTC", 1100)], { BTC: 10 })!;
+    expect(ch.usd).toBeCloseTo(100, 9);
+    expect(ch.pct).toBeCloseTo(5, 9);
+    expect(dayChange([a("USDT", 1000, true)], {})).toBeNull();
   });
 });

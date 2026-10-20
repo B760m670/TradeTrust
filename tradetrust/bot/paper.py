@@ -43,6 +43,9 @@ class PaperExchange:
     def balance(self, coin: str) -> float:
         return max(0.0, self._balances().get(coin, 0.0))
 
+    def holdings(self) -> dict[str, dict]:
+        return {coin: {"qty": qty, "usd": None} for coin, qty in self._balances().items()}
+
     def market_buy(self, symbol, coin, qty: Decimal) -> Fill:
         price = self.last_price(symbol) * (1 + SLIPPAGE)
         cost = float(qty) * price

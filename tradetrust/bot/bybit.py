@@ -190,6 +190,10 @@ class BybitExchange:
         b = self.c.wallet([coin]).get(coin)
         return max(0.0, b["wallet"] - b["locked"]) if b else 0.0
 
+    def holdings(self) -> dict[str, dict]:
+        """Все монеты на счёте: количество и стоимость в USD по оценке биржи."""
+        return {coin: {"qty": b["wallet"], "usd": b["usd"]} for coin, b in self.c.wallet().items()}
+
     def _wait_final(self, symbol: str, order_id: str) -> dict:
         order = None
         for _ in range(self.poll_tries):

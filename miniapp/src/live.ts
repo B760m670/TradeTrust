@@ -27,6 +27,7 @@ const MAX_ARGS = 10; // спот Bybit принимает до 10 тем в од
 export class LiveFeed {
   private ws: WebSocket | null = null;
   private listeners = new Map<string, Set<Listener>>();
+  private last = new Map<string, Record<string, unknown>>(); // новый экран сразу получает последнюю цену
   private ping: ReturnType<typeof setInterval> | undefined;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private attempts = 0;
@@ -42,11 +43,14 @@ export class LiveFeed {
       this.send("subscribe", [topic]);
     }
     set.add(cb);
+    const cached = this.last.get(topic);
+    if (cached) queueMicrotask(() => set!.has(cb) && cb(cached));
     this.connect();
     return () => {
       set!.delete(cb);
       if (set!.size === 0) {
         this.listeners.delete(topic);
+        this.last.delete(topic);
         this.send("unsubscribe", [topic]);
       }
     };
@@ -77,6 +81,7 @@ export class LiveFeed {
       }
       if (!msg.topic || !msg.data) return;
       const data = (Array.isArray(msg.data) ? msg.data[msg.data.length - 1] : msg.data) as Record<string, unknown>;
+      this.last.set(msg.topic, data);
       this.listeners.get(msg.topic)?.forEach((cb) => cb(data));
     };
     ws.onclose = () => {
