@@ -109,6 +109,7 @@ export interface Status {
 
 export interface ChartData {
   coin: string;
+  interval: string;
   time: number[];
   open: (number | null)[];
   high: (number | null)[];
@@ -161,7 +162,8 @@ type Message = { message: string };
 export const api = {
   status: () => request<Status>("/api/status"),
   portfolio: () => request<Portfolio>("/api/portfolio"),
-  chart: (coin: string) => request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}`),
+  chart: (coin: string, interval = "4h") =>
+    request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}`),
   confirm: (id: string) => request<Message>(`/api/proposals/${id}/confirm`, "POST"),
   reject: (id: string) => request<Message>(`/api/proposals/${id}/reject`, "POST"),
   setMode: (mode: Mode) => request<Message>("/api/mode", "POST", { mode }),

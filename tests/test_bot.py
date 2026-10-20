@@ -694,3 +694,43 @@ def test_api_portfolio(make_bot):
         assert pf["total"] == pytest.approx(1000) and pf["assets"][0]["coin"] == "USDT"
     finally:
         server.shutdown()
+
+
+# --- графики на разных таймфреймах ----------------------------------------------
+
+def test_minute_candles_use_bybit_code_and_drop_unclosed():
+    now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
+    bar = 60_000
+    start = now_ms // bar * bar
+    rows = [[str(start - k * bar), "1", "2", "0.5", str(10 + k), "1", "1"] for k in range(3)]
+    session = CaptureSession({"list": rows})
+    df = BybitClient("mainnet", session=session).candles("SOLUSDT", "1m")
+    assert "interval=1&" in session.calls[0][1] and len(df) == 2
+
+
+def test_chart_on_another_timeframe(make_bot):
+    bot, ex, _ = make_bot("auto")
+    ex.set("SOL", cross_on_last_bar())
+    seen = []
+    original = ex.candles
+    ex.candles = lambda symbol, interval, limit=1000: seen.append(interval) or original(symbol, interval, limit)
+    data = bot.chart("SOL", "15m")
+    assert seen == ["15m"] and data["interval"] == "15m" and len(data["time"]) == len(data["ema_fast"])
+    with pytest.raises(ValueError):
+        bot.chart("SOL", "2m")
+
+
+def test_api_rejects_unknown_interval(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    server = api.serve(bot, "secret-token", 0)
+    base = f"http://127.0.0.1:{server.server_address[1]}/api/candles?coin=SOL"
+    auth = {"Authorization": "Bearer secret-token"}
+    try:
+        data = json.loads(urllib.request.urlopen(urllib.request.Request(base + "&interval=1h", headers=auth)).read())
+        assert data["interval"] == "1h"
+        with pytest.raises(HTTPError) as e:
+            urllib.request.urlopen(urllib.request.Request(base + "&interval=7s", headers=auth))
+        assert e.value.code == 400
+    finally:
+        server.shutdown()

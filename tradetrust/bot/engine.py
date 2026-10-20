@@ -114,6 +114,7 @@ def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) ->
     return out
 
 
+CHART_INTERVALS = ("1m", "5m", "15m", "1h", "4h", "1d", "1w")
 STABLES = {"USDT", "USDC", "FDUSD", "DAI", "USDE"}
 MODE_NAMES = {"signals": "только сигналы", "confirm": "с подтверждением", "auto": "автоматически"}
 
@@ -552,14 +553,18 @@ class Bot:
                         self.notify(f"⚠️ {p.coin}: стоп-ордер пропал — поставил заново на {fmt(p.stop)}")
 
     # --- отчёты ----------------------------------------------------------------
-    def chart(self, coin: str, bars: int = 150) -> dict:
-        """Свечи с EMA для графика в мини-приложении."""
-        df = self.ex.candles(self.symbol(coin), "4h", 1000)
+    def chart(self, coin: str, interval: str = "4h", bars: int = 300) -> dict:
+        """Свечи с EMA для графика в мини-приложении. Решения бот принимает только по 4ч;
+        на других таймфреймах EMA считаются по их свечам — для обзора."""
+        if interval not in CHART_INTERVALS:
+            raise ValueError(f"interval: {', '.join(CHART_INTERVALS)}")
+        df = self.ex.candles(self.symbol(coin), interval, 1000)
         data = bt.prepare(df, self.params).iloc[-bars:]
         nan_to_none = lambda col: [None if pd.isna(v) else round(float(v), 10) for v in data[col]]  # noqa: E731
         p = self.store.position(coin)
         return {
             "coin": coin,
+            "interval": interval,
             "time": [int(t.timestamp()) for t in data.index],
             **{k: nan_to_none(k) for k in ("open", "high", "low", "close", "ema_fast", "ema_slow", "atr")},
             "position": p.__dict__ if p else None,

@@ -17,6 +17,7 @@ interface TelegramWebApp {
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   setBottomBarColor?(color: string): void;
+  disableVerticalSwipes?(): void;
   onEvent?(event: "themeChanged", cb: () => void): void;
   offEvent?(event: "themeChanged", cb: () => void): void;
   CloudStorage?: {
