@@ -1,63 +1,71 @@
 /* TradeTrust — своя тема, тёмная и светлая (data-theme на <html>). Телефон: нижнее меню;
    от 900px (Telegram Desktop): боковая панель. */
+/* Вариант «Терминал»: плотно и строго, как у профессиональных бирж; фиолетовый акцент, Manrope. */
 :root {
-  --bg: #07080d;
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-2: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text: #f4f5f8;
-  --muted: rgba(244, 245, 248, 0.55);
-  --faint: rgba(244, 245, 248, 0.32);
+  --bg: #08090c;
+  --surface: #101218;
+  --surface-2: #171a22;
+  --border: #232733;
+  --border-strong: #2e3340;
+  --text: #eceff4;
+  --muted: #8b92a5;
+  --faint: #5a6173;
   --accent: #8b7cff;
-  --accent-soft: rgba(139, 124, 255, 0.16);
-  --up: #4fe3b0;
-  --up-soft: rgba(79, 227, 176, 0.12);
-  --down: #ff7a8a;
-  --down-soft: rgba(255, 122, 138, 0.12);
-  --amber: #ffb86b;
-  --amber-soft: rgba(255, 184, 107, 0.14);
-  --on-accent: #07080d;
+  --accent-soft: rgba(139, 124, 255, 0.14);
+  --up: #20d49a;
+  --up-soft: rgba(32, 212, 154, 0.12);
+  --down: #ff5470;
+  --down-soft: rgba(255, 84, 112, 0.12);
+  --amber: #ff9f1a;
+  --amber-soft: rgba(255, 159, 26, 0.14);
+  --demo: #3b9eff;
+  --demo-soft: rgba(59, 158, 255, 0.14);
+  --on-accent: #0b0a18;
+  --on-color: #08090c;
   --accent-hover: #9c8fff;
-  --accent-line: rgba(139, 124, 255, 0.4);
-  --inset: rgba(255, 255, 255, 0.03);
-  --sidebar-bg: rgba(255, 255, 255, 0.015);
-  --nav-bg: rgba(20, 21, 30, 0.86);
-  --toast-bg: #1b1c27;
-  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --accent-line: rgba(139, 124, 255, 0.45);
+  --inset: #171a22;
+  --sidebar-bg: #0c0d11;
+  --nav-bg: #101218;
+  --toast-bg: #171a22;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   --card-shadow: none;
-  --r-lg: 24px;
-  --r-md: 18px;
+  --r-lg: 14px;
+  --r-md: 12px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-h: 64px;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #f3f3f7;
+  --bg: #f3f4f7;
   --surface: #ffffff;
-  --surface-2: rgba(17, 18, 28, 0.05);
-  --border: rgba(17, 18, 28, 0.08);
-  --border-strong: rgba(17, 18, 28, 0.16);
-  --text: #11121c;
-  --muted: rgba(17, 18, 28, 0.6);
-  --faint: rgba(17, 18, 28, 0.4);
+  --surface-2: #eceef3;
+  --border: #e2e5eb;
+  --border-strong: #cdd2db;
+  --text: #0d1016;
+  --muted: #5b6272;
+  --faint: #959caa;
   --accent: #6c5cf0;
-  --accent-soft: rgba(108, 92, 240, 0.11);
-  --up: #0c9a6a;
-  --up-soft: rgba(12, 154, 106, 0.1);
-  --down: #e0444f;
-  --down-soft: rgba(224, 68, 79, 0.09);
-  --amber: #b86e00;
+  --accent-soft: rgba(108, 92, 240, 0.1);
+  --up: #0a9a6a;
+  --up-soft: rgba(10, 154, 106, 0.1);
+  --down: #e33b55;
+  --down-soft: rgba(227, 59, 85, 0.09);
+  --amber: #d47a00;
   --amber-soft: rgba(230, 150, 30, 0.13);
+  --demo: #1f6fe5;
+  --demo-soft: rgba(31, 111, 229, 0.1);
   --on-accent: #ffffff;
+  --on-color: #ffffff;
   --accent-hover: #5b4ae6;
   --accent-line: rgba(108, 92, 240, 0.45);
-  --inset: rgba(17, 18, 28, 0.035);
+  --inset: #f1f3f6;
   --sidebar-bg: #ffffff;
-  --nav-bg: rgba(255, 255, 255, 0.88);
+  --nav-bg: #ffffff;
   --toast-bg: #ffffff;
-  --shadow: 0 12px 36px rgba(17, 18, 28, 0.14);
-  --card-shadow: 0 1px 2px rgba(17, 18, 28, 0.04), 0 4px 18px rgba(17, 18, 28, 0.04);
+  --shadow: 0 12px 36px rgba(13, 16, 22, 0.14);
+  --card-shadow: none;
   color-scheme: light;
 }
 html, body { transition: background-color 0.35s ease, color 0.35s ease; }
@@ -652,3 +660,169 @@ button.card { text-align: left; width: 100%; }
 .real-card { border-color: var(--down-soft); }
 .real-card p { margin: 4px 0 0; }
 .tone-muted { color: var(--muted); }
+
+/* ===================== «Терминал»: формы, меню, шапка ===================== */
+.btn { height: 44px; border-radius: 10px; }
+.btn-primary { color: var(--on-accent); }
+.pause-btn { height: 36px; }
+.segmented { border-radius: 10px; padding: 3px; background: var(--surface-2); border: 0; }
+.segmented-thumb { top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--n)); border-radius: 8px; }
+.segmented button { height: 34px; font-size: 13px; }
+.card { border-radius: var(--r-lg); box-shadow: none; padding: 14px; }
+.tile { border-radius: 10px; padding: 10px 12px; }
+.chip { border-radius: 6px; padding: 3px 7px; font-size: 11px; letter-spacing: 0.02em; }
+.pill { border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+.tile-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.tile-value { font-size: 16px; }
+.section-title { margin: 0; font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
+h3.section-title { margin: 22px 0 10px; }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; color: var(--muted); }
+.page-head h1 { font-size: 26px; letter-spacing: -0.03em; }
+.big-int { font-size: 44px; letter-spacing: -0.04em; }
+.big-frac { font-size: 26px; color: var(--faint); }
+.big-unit:empty { display: none; }
+.logo { width: 34px; height: 34px; border-radius: 9px; font-size: 13px; }
+.filters button { height: 34px; padding: 0 12px; border-radius: 8px; }
+.filters button.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+.tone-accent { color: var(--accent); }
+.faint { color: var(--faint); }
+.tight { gap: 8px; flex-wrap: wrap; }
+.admin-search { border-radius: 10px; background: var(--surface); }
+.sheet { background: var(--surface); border-radius: 20px 20px 0 0; }
+.pv-dark { background: #08090c; } .pv-light { background: #f3f4f7; }
+.pv-auto { background: linear-gradient(90deg, #f3f4f7 50%, #08090c 50%); }
+
+/* нижнее меню во всю ширину, полоска над выбранным разделом */
+.bottom-nav { left: 0; right: 0; bottom: 0; max-width: none; height: calc(var(--nav-h) + var(--safe-bottom));
+  padding: 0 8px var(--safe-bottom); border-radius: 0; border: 0; border-top: 1px solid var(--border);
+  background: var(--nav-bg); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.bottom-nav button { color: var(--faint); font-weight: 600; }
+.bottom-nav button::before { content: ""; position: absolute; top: -1px; width: 28px; height: 2px; border-radius: 1px;
+  background: transparent; transition: background 0.25s; }
+.bottom-nav button.on { color: var(--accent); font-weight: 800; }
+.bottom-nav button.on::before { background: var(--accent); }
+.content { padding-bottom: calc(var(--nav-h) + 32px + var(--safe-bottom)); }
+.toast { bottom: calc(var(--nav-h) + 16px + var(--safe-bottom)); }
+.save-bar { bottom: calc(var(--nav-h) + 12px + var(--safe-bottom)); border-radius: 12px; }
+
+/* шапка «Главной»: логотип, ДЕМО | РЕАЛЬНЫЙ, настройки */
+.rail { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.sq-btn { width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 10px;
+  background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.acc-seg { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--surface-2); }
+.acc-seg button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; cursor: pointer; }
+.acc-seg button.on::before, .acc-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.acc-seg button.on.demo { color: var(--demo); background: var(--demo-soft); }
+.acc-seg button.on.real { color: var(--amber); background: var(--amber-soft); }
+.acc-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 8px; font-size: 11px;
+  font-weight: 800; letter-spacing: 0.06em; white-space: nowrap; }
+.acc-badge.demo { color: var(--demo); background: var(--demo-soft); }
+.acc-badge.real { color: var(--amber); background: var(--amber-soft); }
+
+/* бегущая строка цен */
+.tape { margin: 0 -16px 4px; overflow: hidden; border-block: 1px solid var(--border); background: var(--surface); }
+.tape-track { display: flex; width: max-content; animation: tape 60s linear infinite; }
+.tape-track > span { display: flex; }
+.tape button { flex-shrink: 0; padding: 8px 9px; border: 0; background: none; color: var(--text); font-size: 11px;
+  font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+.tape b { color: var(--muted); font-weight: 800; margin-right: 4px; }
+.tape:hover .tape-track { animation-play-state: paused; }
+@keyframes tape { to { transform: translateX(-50%); } }
+.app.wide .tape { margin: 0 0 4px; border-radius: 10px; border: 1px solid var(--border); }
+
+.balance { display: flex; flex-direction: column; gap: 8px; padding: 16px 0 4px; }
+.chg { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 6px; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chg.tone-up { background: var(--up-soft); } .chg.tone-down { background: var(--down-soft); }
+.chg.tone-neutral { background: var(--surface-2); color: var(--muted); }
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.quick button { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: transform 0.15s var(--ease), background 0.2s; }
+.quick button:active { transform: scale(0.96); }
+.sec-head { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 10px; }
+.sec-head .link-btn { align-self: center; font-size: 12px; }
+
+/* карточка бота */
+.led { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--up); box-shadow: 0 0 8px var(--up); }
+.led.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.led.off { background: var(--faint); box-shadow: none; }
+.mode-tag { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent); font-size: 10px;
+  font-weight: 800; letter-spacing: 0.06em; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 0; border-radius: 10px; background: var(--surface-2); }
+.grid3 > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0 12px; }
+.grid3 small { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); }
+.grid3 b { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sig-list { display: flex; gap: 6px; flex-wrap: wrap; }
+.sig-tag { padding: 3px 7px; border-radius: 6px; font-size: 11px; font-weight: 800; color: var(--accent); background: var(--accent-soft); }
+
+/* таблицы, как у бирж */
+.table { display: flex; flex-direction: column; }
+.th { display: flex; justify-content: space-between; padding: 8px 0; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--faint); border-bottom: 1px solid var(--border); }
+.tr { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 0; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text); text-align: left; font: inherit; }
+.tr .row-main strong { font-size: 14px; }
+.tr .row-end { gap: 4px; }
+
+/* вкладки с подчёркиванием */
+.tabs { display: flex; gap: 18px; margin-bottom: 12px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.tabs button { flex-shrink: 0; padding: 10px 0 8px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  background: none; color: var(--faint); font-size: 13px; font-weight: 600; cursor: pointer; }
+.tabs button.on { color: var(--text); font-weight: 700; border-color: var(--accent); }
+
+/* «Торговать» */
+.trade-head { margin-bottom: 8px; }
+.pair-btn { border-radius: 10px; }
+.spot-tag { padding: 5px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: 0.06em; }
+.price-block { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.price-main { display: flex; flex-direction: column; gap: 4px; }
+.price-main .coin-price { font-size: 34px; font-weight: 800; letter-spacing: -0.04em; line-height: 1.1; }
+.day-stats { display: grid; grid-template-columns: auto auto; gap: 4px 12px; margin: 0; font-size: 11px; }
+.day-stats dt { color: var(--faint); } .day-stats dd { margin: 0; text-align: right; color: var(--muted); font-weight: 700; }
+.order-buttons .btn { height: auto; min-height: 50px; padding: 6px 0; flex-direction: column; gap: 0; border-radius: 10px; color: var(--on-color); }
+.order-buttons .btn small { font-size: 10px; font-weight: 600; opacity: 0.7; }
+.order-buttons .btn-danger:disabled { opacity: 0.35; }
+.trade-bar { left: 0; right: 0; max-width: none; bottom: calc(var(--nav-h) + var(--safe-bottom)); padding: 10px 16px;
+  background: var(--bg); border-top: 1px solid var(--border); }
+.app.trading .content { padding-bottom: calc(var(--nav-h) + 110px + var(--safe-bottom)); }
+.btn-up { color: var(--on-color); }
+.side-seg.buy .segmented-thumb { background: var(--up); }
+.side-seg.sell .segmented-thumb { background: var(--down); }
+.side-seg .segmented button.on { color: var(--on-color); }
+.order-type { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.order-input { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border-radius: 10px; background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent-line); }
+.order-input input { flex: 1; min-width: 0; padding: 8px 0; border: 0; background: none; color: var(--text); font: inherit;
+  font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; outline: none; }
+.order-input .unit { padding: 6px 8px; border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 800; }
+.order-field input { border: 0; }
+.chip-btn { border-radius: 8px; background: var(--surface-2); border-color: transparent; font-size: 12px; }
+
+/* «Рынки»: пара · цена · 24ч · бот */
+.sig-row { grid-template-columns: minmax(0, 1fr) auto 76px auto; gap: 10px; padding: 9px 4px; border-radius: 0; }
+.sig-row .col-price { text-align: right; }
+.sig-row .col-day { text-align: right; font-size: 13px; font-weight: 700; }
+.sig-head .col-price, .sig-head .col-day { text-align: right; }
+.sig-row .chip { font-size: 10px; letter-spacing: 0.04em; }
+.app.wide .sig-row { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 90px minmax(0, 0.9fr) minmax(0, 0.8fr) 130px; }
+.table-card { padding: 4px 12px; }
+
+/* окно счёта */
+.acc-opt { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 100%; padding: 14px;
+  border: 0; border-radius: 12px; background: var(--surface-2); color: var(--text); text-align: left; font: inherit;
+  box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+.acc-opt.demo .account-dot { background: var(--demo); box-shadow: none; }
+.acc-opt.real .account-dot { background: var(--amber); box-shadow: none; }
+.acc-opt.real.on { background: var(--amber-soft); box-shadow: inset 0 0 0 1px var(--amber); }
+.acc-warn { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; }
+.acc-warn strong { color: var(--amber); font-size: 14px; }
+.acc-warn span { color: var(--muted); line-height: 1.45; }
+.btn-real { border: 0; background: var(--amber); color: var(--on-color); }
+.real-card { border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.demo-card { border-color: color-mix(in srgb, var(--demo) 40%, transparent); }
+@media (prefers-reduced-motion: reduce) { .tape-track { animation: none; } }
+.sec-head .section-title { margin: 0; }
+.price-main .live-badge { align-self: flex-start; }
+.sig-name span { white-space: nowrap; }

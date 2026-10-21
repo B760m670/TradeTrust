@@ -1,16 +1,16 @@
 // Иконки — линейные SVG, цвет берут из currentColor.
 import type { ReactNode } from "react";
 
-function Icon({ size = 20, children }: { size?: number; children: ReactNode }) {
+function Icon({ size = 20, className, children }: { size?: number; className?: string; children: ReactNode }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   );
 }
 
-type P = { size?: number };
+type P = { size?: number; className?: string };
 
 export const HomeIcon = (p: P) => <Icon {...p}><path d="M3 10.5 12 3l9 7.5V21H3z" /><path d="M9.5 21v-6h5v6" /></Icon>;
 export const TrendIcon = (p: P) => <Icon {...p}><polyline points="3 17 9 11 13 15 21 7" /><polyline points="15 7 21 7 21 13" /></Icon>;
@@ -35,3 +35,8 @@ export const WalletIcon = (p: P) => (
 );
 export const ShieldIcon = (p: P) => <Icon {...p}><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z" /><polyline points="9 12 11 14 15 10" /></Icon>;
 export const CandleIcon = (p: P) => <Icon {...p}><line x1="7" y1="3" x2="7" y2="21" /><rect x="5" y="7" width="4" height="8" rx="1" /><line x1="17" y1="3" x2="17" y2="21" /><rect x="15" y="10" width="4" height="6" rx="1" /></Icon>;
+export const BuyIcon = (p: P) => <Icon {...p}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></Icon>;
+export const SellIcon = (p: P) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></Icon>;
+export const BotIcon = (p: P) => (
+  <Icon {...p}><path d="M12 8V4H8" /><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" /></Icon>
+);

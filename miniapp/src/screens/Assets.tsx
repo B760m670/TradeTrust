@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Status } from "../api";
-import { Card, Chip, CoinAvatar, Empty, Segmented } from "../components/ui";
+import { Card, Chip, CoinAvatar, Empty, Tabs } from "../components/ui";
 import { dateTime, price, usd } from "../format";
 import { Journal } from "./Journal";
 import { Portfolio } from "./Portfolio";
@@ -18,7 +18,7 @@ export function Assets({ status: s }: { status: Status }) {
         <h1>Активы</h1>
         <span className="muted">Весь счёт: ваши монеты и то, чем распоряжается бот</span>
       </header>
-      <Segmented label="Раздел" options={VIEWS} value={view} onChange={setView} />
+      <Tabs label="Раздел" options={VIEWS} value={view} onChange={setView} />
       {view === "overview" ? <Portfolio embedded /> : (
         <>
           <Card title="Мои сделки" aside={<span className="muted small">{orders.length}</span>}>

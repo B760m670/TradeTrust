@@ -1,17 +1,18 @@
 import type { CSSProperties } from "react";
 import type { Status } from "../api";
 import type { Tab } from "../App";
-import { AccountButton } from "../components/Account";
+import { AccountSegment } from "../components/Account";
 import { BotPowerButton, BotState, PauseButton, type Act } from "../components/BotControls";
-import { ChevronIcon, GearIcon } from "../components/icons";
-import { BigMoney, Button, Card, CoinAvatar, Flash, LiveBadge, Skeleton, Tile, Value } from "../components/ui";
+import { BotIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, WalletIcon } from "../components/icons";
+import { BigMoney, Card, CoinAvatar, Flash, LiveBadge, Skeleton } from "../components/ui";
 import { pct, price, tone, usd } from "../format";
 import { useTickers } from "../live";
 import { dayChange } from "../logic";
 import { PositionCard, ProposalCard } from "./Overview";
 import { usePortfolio, withLive } from "./Portfolio";
 
-const MODE_LABEL = { signals: "только сигналы", confirm: "с подтверждением", auto: "сам" } as const;
+const MODE_TAG = { signals: "СИГНАЛЫ", confirm: "ВРУЧНУЮ", auto: "АВТО" } as const;
+const arrow = (x: number) => (x >= 0 ? "▲ " : "▼ ");
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
 
 interface Props {
@@ -35,13 +36,37 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
   const botPnl = realized + s.equity.unrealized;
   const movers = Object.entries(tickers).sort((a, b) => Math.abs(b[1].change24h) - Math.abs(a[1].change24h)).slice(0, 5);
 
+  const tape = s.all_coins.slice(0, 12).filter((c) => tickers[c]);
+  const entries = Object.entries(s.signals)
+    .filter(([c, g]) => g.cross_up && g.regime_ok && g.trend_ok !== false && !s.positions.some((p) => p.coin === c))
+    .map(([c]) => c).slice(0, 3);
+  const real = s.env === "mainnet";
+
   return (
     <div className="home">
-      <header className="top">
+      <header className="rail">
         <span className="logo" aria-hidden="true">TT</span>
-        <div className="top-title"><strong>TradeTrust</strong><AccountButton status={s} busy={busy} act={act} /></div>
-        <button className="icon-btn btn btn-ghost" aria-label="Настройки" onClick={onSettings}><GearIcon /></button>
+        <AccountSegment status={s} busy={busy} act={act} />
+        <span className="grow" />
+        <button className="sq-btn" aria-label="Настройки" onClick={onSettings}><GearIcon size={18} /></button>
       </header>
+
+      {tape.length > 0 && (
+        <div className="tape" aria-label="Цены за сутки">
+          <div className="tape-track">
+            {[0, 1].map((k) => (
+              <span key={k} aria-hidden={k === 1 || undefined}>
+                {tape.map((c) => (
+                  <button key={c} onClick={() => onOpenCoin(c)} tabIndex={k ? -1 : 0}>
+                    <b>{c}</b> {price(tickers[c].price)}{" "}
+                    <span className={`tone-${tone(tickers[c].change24h)}`}>{arrow(tickers[c].change24h)}{pct(Math.abs(tickers[c].change24h))}</span>
+                  </button>
+                ))}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {s.account === "demo" && (
         <Card className="demo-card">
@@ -52,48 +77,54 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
           </p>
         </Card>
       )}
-
-      {s.env === "mainnet" && (
-        <Card className="demo-card real-card">
+      {real && s.accounts && (
+        <Card className="real-card">
           <strong>Реальный счёт Bybit</strong>
           <p className="muted small">
-            Сделки здесь — настоящие деньги. Бот на этом счёте {s.enabled === false ? "выключен: торгуете только вы" :
+            Сделки здесь — настоящие деньги. Бот {s.enabled === false ? "выключен: торгуете только вы" :
               `включён и торгует в пределах ${usd(s.settings.capital_usdt)} USDT`}.
           </p>
         </Card>
       )}
 
-      <section className="hero">
-        <span className="eyebrow">Баланс счёта, USD</span>
-        {total == null ? <Skeleton height={52} width="60%" /> : <BigMoney value={total} unit="$" />}
-        <div className="hero-pills">
-          {day && <span className={`pill pill-${tone(day.usd)}`}>{usd(day.usd, true)} $ · {pct(day.pct, true)}</span>}
-          <span className="muted small">за 24 часа</span>
+      <section className="balance">
+        <span className="eyebrow">Общий баланс · USD</span>
+        {total == null ? <Skeleton height={44} width="60%" /> : <BigMoney value={total} unit="" />}
+        <div className="row tight">
+          {day && <span className={`chg tone-${tone(day.usd)}`}>{arrow(day.usd)}{pct(Math.abs(day.pct))}</span>}
+          {day && <span className={`num bold small tone-${tone(day.usd)}`}>{usd(day.usd, true)} $</span>}
+          <span className="faint small">за 24 ч</span>
           <LiveBadge on={Object.keys(tickers).length > 0} />
-        </div>
-        <div className="btn-row">
-          <Button variant="primary" onClick={() => onTab("trade")}>Торговать</Button>
-          <Button onClick={() => onTab("assets")}>Активы</Button>
         </div>
       </section>
 
-      <h3 className="section-title">Торговые боты</h3>
+      <div className="quick">
+        <button onClick={() => onTab("trade")}><BuyIcon size={20} className="tone-up" />Купить</button>
+        <button onClick={() => onTab("trade")}><SellIcon size={20} className="tone-down" />Продать</button>
+        <button onClick={onBot}><BotIcon size={20} className="tone-accent" />Бот</button>
+        <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
+      </div>
+
+      <div className="sec-head"><h3 className="section-title">Торговые боты</h3>
+        <button className="link-btn" onClick={onBot}>Открыть <ChevronIcon size={14} /></button></div>
       <Card className="bot-card">
         <button className="bot-card-main" onClick={onBot}>
-          <span className="bot-icon" aria-hidden="true">📈</span>
+          <span className={`led${s.enabled === false ? " off" : s.paused ? " amber" : ""}`} aria-hidden="true" />
           <span className="row-main">
             <strong>Трендовый бот</strong>
-            <span className="muted small">спот · свечи 4ч · {MODE_LABEL[s.mode]}</span>
+            <span className="muted small">EMA {s.settings.ema_fast}/{s.settings.ema_slow} · 4ч · спот · {s.settings.coins.length} монет</span>
           </span>
-          <ChevronIcon size={18} />
+          <span className="mode-tag">{s.enabled === false ? "ВЫКЛ" : MODE_TAG[s.mode]}</span>
         </button>
-        <div className="tiles tiles-3">
-          <Tile label="Капитал" value={`${usd(s.equity.total)} $`} />
-          <Tile label="Прибыль" value={`${usd(botPnl, true)} $`} tone={tone(botPnl)} hint="за всё время" />
-          <Tile label="Позиции" value={`${s.positions.length}/${s.settings.max_positions}`} />
+        <div className="grid3">
+          <div><small>КАПИТАЛ</small><b className="num">{usd(s.equity.total)}</b></div>
+          <div><small>P&amp;L</small><b className={`num tone-${tone(botPnl)}`}>{usd(botPnl, true)}</b></div>
+          <div><small>ПОЗИЦИИ</small><b className="num">{s.positions.length}/{s.settings.max_positions}</b></div>
         </div>
         <div className="side-row">
-          <BotState status={s} />
+          {entries.length > 0
+            ? <span className="sig-list">{entries.map((c) => <span key={c} className="sig-tag">▲ {c} вход</span>)}</span>
+            : <BotState status={s} />}
           {s.enabled === false ? <BotPowerButton status={s} busy={busy} act={act} /> : <PauseButton status={s} busy={busy} act={act} />}
         </div>
       </Card>
@@ -115,18 +146,24 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
       )}
 
       {movers.length > 0 && (
-        <Card title="Рынок за сутки" aside={<button className="link-btn" onClick={() => onTab("markets")}>Все <ChevronIcon size={16} /></button>}>
-          <div className="list">
+        <>
+          <div className="sec-head"><h3 className="section-title">Рынок за сутки</h3>
+            <button className="link-btn" onClick={() => onTab("markets")}>Рынки <ChevronIcon size={14} /></button></div>
+          <div className="table">
+            <div className="th"><span>ПАРА</span><span>ЦЕНА · 24Ч</span></div>
             {movers.map(([coin, t], i) => (
-              <button key={coin} className="list-row tappable" style={stagger(i)} onClick={() => onOpenCoin(coin)}>
+              <button key={coin} className="tr tappable" style={stagger(i)} onClick={() => onOpenCoin(coin)}>
                 <CoinAvatar coin={coin} size={30} tone={t.change24h >= 0 ? "up" : "down"} />
-                <strong className="list-coin">{coin}</strong>
-                <Flash value={t.price} className="num">{price(t.price)}</Flash>
-                <Value tone={tone(t.change24h)} bold>{pct(t.change24h, true)}</Value>
+                <span className="row-main"><strong>{coin}<span className="faint">/USDT</span></strong>
+                  {s.positions.some((p) => p.coin === coin) && <span className="small tone-accent">бот в позиции</span>}</span>
+                <span className="row-end">
+                  <Flash value={t.price} className="num bold">{price(t.price)}</Flash>
+                  <span className={`chg tone-${tone(t.change24h)}`}>{arrow(t.change24h)}{pct(Math.abs(t.change24h))}</span>
+                </span>
               </button>
             ))}
           </div>
-        </Card>
+        </>
       )}
     </div>
   );

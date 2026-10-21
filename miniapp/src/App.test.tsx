@@ -124,12 +124,12 @@ describe("mini app", () => {
     await renderApp();
     await screen.findByText("Вход ETH");
     expect(calls[0]).toEqual({ url: "/api/status", method: "GET", auth: "tma query_id=1&hash=abc" });
-    expect(screen.getByText("Бумажный счёт")).toBeTruthy();
+    expect(screen.getAllByText("ДЕМО").length).toBeGreaterThan(0);
     expect(screen.getAllByText("SOL").length).toBeGreaterThan(0);
     expect(document.documentElement.dataset.theme).toBe("dark"); // «Авто» — как в Telegram
     expect(screen.getByText("Стоп 80,77")).toBeTruthy();
     expect(screen.getByText("Торговые боты")).toBeTruthy();
-    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenCalledWith("#07080D");
+    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenCalledWith("#08090C");
     await openBot();
     expect(await screen.findByRole("radio", { name: "Вручную", checked: true })).toBeTruthy();
   });
@@ -144,7 +144,7 @@ describe("mini app", () => {
 
   it("confirms a trade with one tap", async () => {
     await renderApp();
-    fireEvent.click(await screen.findByText("Купить"));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Купить" })).at(-1)!);
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     const post = calls.find((c) => c.method === "POST")!;
     expect(post.url).toBe(`/api/proposals/${status.proposals[0].id}/confirm`);
@@ -158,10 +158,10 @@ describe("mini app", () => {
     fireEvent.click(await screen.findByText("LINK", { selector: "strong" }));
     expect(await screen.findByRole("button", { name: "Выбрать пару" })).toBeTruthy();
     expect(screen.getByText("LINK", { selector: ".pair-name strong" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: "Индикаторы" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Индикаторы" }));
     await screen.findByText("Что видит бот");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Активы" })));
-    fireEvent.click(await screen.findByRole("radio", { name: "История" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "История" }));
     await screen.findByText("Profit factor");
     expect(screen.getByText("сработал стоп", { exact: false })).toBeTruthy();
   });
@@ -170,7 +170,7 @@ describe("mini app", () => {
     await renderApp();
     const nav = within(await waitFor(() => document.querySelector(".bottom-nav") as HTMLElement));
     fireEvent.click(nav.getByRole("button", { name: "Торговать" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Купить" }));
+    fireEvent.click(within(await waitFor(() => document.querySelector(".trade-bar") as HTMLElement)).getByRole("button", { name: /^Купить/ }));
     fireEvent.change(await screen.findByLabelText("Сумма в USDT"), { target: { value: "50" } });
     fireEvent.click(screen.getByRole("button", { name: /^Купить SOL$/ }));
     await waitFor(() => expect(calls.find((c) => c.url === "/api/order")?.body).toEqual({ coin: "SOL", side: "buy", usdt: 50 }));
@@ -200,7 +200,7 @@ describe("mini app", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(localStorage.getItem("theme")).toBe("light");
     expect(window.Telegram!.WebApp.CloudStorage!.setItem).toHaveBeenCalledWith("theme", "light");
-    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenLastCalledWith("#F3F3F7");
+    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenLastCalledWith("#F3F4F7");
   });
 
   it("explains that new entries wait while bitcoin is below its average", async () => {
@@ -221,7 +221,7 @@ describe("mini app", () => {
     try {
       await renderApp();
       expect(await screen.findByText("Это ваш демо-счёт")).toBeTruthy();
-      expect(screen.getAllByText("Демо-счёт").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("ДЕМО").length).toBeGreaterThan(0);
     } finally {
       Object.assign(status, { account: "owner" });
     }
@@ -237,13 +237,13 @@ describe("mini app", () => {
     try {
       await renderApp();
       window.Telegram!.WebApp.showConfirm = confirm;
-      fireEvent.click(await screen.findByRole("button", { name: /Счёт: Демо-счёт Bybit/ }));
+      fireEvent.click(await screen.findByRole("radio", { name: "РЕАЛЬНЫЙ" }));
       const sheet = within(await screen.findByRole("dialog", { name: "Счёт" }));
-      fireEvent.click(sheet.getByRole("button", { name: /Реальный счёт Bybit/ }));
+      expect(sheet.getAllByText(/настоящие деньги/).length).toBeGreaterThan(0);
+      fireEvent.click(sheet.getByRole("button", { name: "Перейти на реальный" }));
       await waitFor(() => expect(calls.find((c) => c.url === "/api/account")?.body).toEqual({ account: "real" }));
-      expect(confirm.mock.calls[0][0]).toMatch(/настоящие деньги/);
       // каждое действие говорит серверу, какой счёт на экране, — на другом счёте оно не выполнится
-      fireEvent.click(await screen.findByText("Купить"));
+      fireEvent.click((await screen.findAllByRole("button", { name: "Купить" })).at(-1)!);
       await waitFor(() => expect(calls.find((c) => c.url.includes("/confirm"))?.account).toBe("main"));
     } finally {
       Object.assign(status, { accounts: undefined });
@@ -255,10 +255,10 @@ describe("mini app", () => {
       list: [{ id: "main", label: "Демо-счёт Bybit", env: "demo", real: false }] } });
     try {
       await renderApp();
-      expect(await screen.findByText("Бот выключен")).toBeTruthy();
+      expect(await screen.findByText("ВЫКЛ")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Включить" }));
       await waitFor(() => expect(calls.find((c) => c.url === "/api/bot")?.body).toEqual({ enabled: true }));
-      fireEvent.click(screen.getByRole("button", { name: /Счёт: Демо-счёт Bybit/ }));
+      fireEvent.click(screen.getByRole("radio", { name: "РЕАЛЬНЫЙ" }));
       expect(await screen.findByText("Реальный счёт не подключён")).toBeTruthy();
       expect(screen.getByText("BYBIT_REAL_API_KEY")).toBeTruthy();
     } finally {
@@ -344,7 +344,7 @@ describe("mini app", () => {
   it("shows the equity chart and daily summary settings", async () => {
     await renderApp();
     fireEvent.click(await screen.findByRole("button", { name: "Активы" }));
-    fireEvent.click(await screen.findByRole("radio", { name: "История" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "История" }));
     await screen.findByText("Худшая просадка");
     expect(screen.getByTestId("equity-chart")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Главная" }));
