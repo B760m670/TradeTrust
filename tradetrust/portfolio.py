@@ -30,6 +30,8 @@ class Rules:
     long_trend_days: int | None = None  # входить, только если цена выше SMA за столько дней
     rank_entries: bool = False      # при нехватке мест — сначала самые сильные
     trail_atr: float | None = None  # подтягивать стоп: не ниже close − trail_atr × ATR (только вверх)
+    dd_cut: float | None = None     # самопроверка: при просадке счёта больше dd_cut от пика риск × dd_mult
+    dd_mult: float = 0.5
 
 
 @dataclass
@@ -74,6 +76,7 @@ def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd
     pending_entry: list[tuple[int, float, float]] = []  # (монета, расстояние до стопа, множитель риска)
     last_close = np.full(len(coins), np.nan)
     equity = np.empty(len(index))
+    peak = capital
 
     def value() -> float:
         return cash + sum(q.qty * last_close[j] for j, q in pos.items())
@@ -92,6 +95,9 @@ def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd
                 close(j, o[i, j], t, "signal")
         pending_exit = set()
         eq_now = value()
+        peak = max(peak, eq_now)
+        if rules.dd_cut and eq_now < peak * (1 - rules.dd_cut):
+            pending_entry = [(j, dist, k * rules.dd_mult) for j, dist, k in pending_entry]
         for j, dist, k in pending_entry:
             if j in pos or np.isnan(o[i, j]) or dist <= 0 or k <= 0 or len(pos) >= rules.max_positions:
                 continue
