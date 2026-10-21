@@ -7,13 +7,15 @@ import {
   type AutoscaleInfo,
   type IChartApi,
   type ISeriesApi,
+  type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { ChartData } from "../api";
 import type { LiveCandle } from "../live";
 import { chartPrice } from "../format";
 import { crosshairTime, tickMark } from "./chartTime";
+import { CloseCountdown, PERIOD_SEC } from "./countdown";
 import { useTheme, type Theme } from "../theme";
 
 // те же цвета, что в styles.css (--up, --down, --accent, --faint) для каждой темы
@@ -37,12 +39,14 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
   const chartRef = useRef<IChartApi | null>(null);
   const liveRef = useRef(live);
   liveRef.current = live;
+  const price = useRef<number | null>(null); // последняя цена — для отсчёта до закрытия свечи
   const lastClosed = data.time[data.time.length - 1] ?? 0;
 
   // формирующаяся свеча: обновляется каждую секунду, закрытые свечи не трогает
   const applyLive = (c: LiveCandle | null | undefined) => {
     if (!c || !series.current || c.time <= lastClosed) return;
     series.current.update({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close });
+    price.current = c.close;
   };
   useEffect(() => applyLive(live), [live]);
   const { theme } = useTheme();
@@ -113,6 +117,7 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
     }
 
     const n = data.time.length;
+    price.current = data.close[n - 1] ?? null;
     series.current = candles;
     chartRef.current = chart;
     applyLive(liveRef.current);
@@ -141,6 +146,8 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
     <div className="chart-wrap">
       <div ref={box} className="chart" data-testid="chart" />
       <ZoomControls onZoom={zoom} onReset={reset} />
+      <CloseCountdown chart={chartRef} series={series as RefObject<ISeriesApi<SeriesType> | null>} price={price}
+        period={PERIOD_SEC[data.interval]} />
     </div>
   );
 }

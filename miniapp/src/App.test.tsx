@@ -7,7 +7,7 @@ vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
-vi.mock("./components/TickChart", () => ({ TickChart: () => <div data-testid="tick-chart" /> }));
+vi.mock("./components/TradingViewChart", () => ({ TradingViewChart: ({ coin }: { coin: string }) => <div data-testid="tradingview">{coin}</div> }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
 
 const PORTFOLIO = {
@@ -160,14 +160,12 @@ describe("mini app", () => {
     await screen.findByText("Вход ETH");
     expect(document.querySelector(".sidebar")).toBeTruthy();
     expect(document.querySelector(".bottom-nav")).toBeNull();
-    expect(screen.getByTestId("chart")).toBeTruthy();
-    expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=4h")).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "1ч" }));
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=1h")).toBe(true));
-    await screen.findByText(/бот решает по 4ч/);
-    fireEvent.click(screen.getByRole("radio", { name: "1с" }));
-    expect(screen.getByTestId("tick-chart")).toBeTruthy();
-    expect(localStorage.getItem("chart_tf")).toBe("1s");
+    expect(screen.getByTestId("tradingview").textContent).toBe("SOL");  // по умолчанию — график как на бирже
+    fireEvent.click(screen.getByRole("radio", { name: "Бот · 4ч" }));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=4h")).toBe(true));
+    expect(await screen.findByTestId("chart")).toBeTruthy();
+    await screen.findByText(/по ним бот решает/);
+    expect(localStorage.getItem("chart_view")).toBe("bot");
     fireEvent.click(screen.getByRole("button", { name: "Сигналы" }));
     await screen.findByText("Состояние");
   });

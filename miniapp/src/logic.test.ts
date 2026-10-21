@@ -3,10 +3,11 @@ import type { EditableSettings, Equity, Position, Settings, Status, Trade } from
 import { dateTime, pct, price, rMultiple, usd } from "./format";
 import { TickMarkType, type UTCTimestamp } from "lightweight-charts";
 import { crosshairTime, tickMark } from "./components/chartTime";
+import { untilClose } from "./components/countdown";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
   allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
-  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar, ago, duration, filterUsers,
+  feedState, utcOffsetLabel, ago, duration, filterUsers,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -192,39 +193,6 @@ describe("portfolio", () => {
   });
 });
 
-describe("second candles", () => {
-  const t = (sec: number, p: number, v = 1, ms = 0) => ({ t: sec * 1000 + ms, p, v });
-
-  it("builds OHLC and volume for each second from trades", () => {
-    const bars: SecondBar[] = [];
-    addTrade(bars, t(100, 10));
-    addTrade(bars, t(100, 12, 2, 300));
-    addTrade(bars, t(100, 9, 1, 900));
-    expect(bars).toEqual([{ time: 100, open: 10, high: 12, low: 9, close: 9, volume: 4 }]);
-  });
-
-  it("fills seconds without trades with flat candles and keeps late trades in their second", () => {
-    const bars: SecondBar[] = [];
-    addTrade(bars, t(100, 10));
-    addTrade(bars, t(103, 11));
-    expect(bars.map((b) => [b.time, b.open, b.close, b.volume])).toEqual(
-      [[100, 10, 10, 1], [101, 10, 10, 0], [102, 10, 10, 0], [103, 11, 11, 1]]);
-    const late = addTrade(bars, t(101, 9.5, 3));
-    expect(late).toEqual({ time: 101, open: 9.5, high: 9.5, low: 9.5, close: 9.5, volume: 3 });
-  });
-
-  it("lets time run on without trades", () => {
-    const bars: SecondBar[] = [];
-    expect(fillSeconds(bars, 50)).toEqual([]);
-    addTrade(bars, t(100, 10));
-    expect(fillSeconds(bars, 102).map((b) => b.time)).toEqual([101, 102]);
-    expect(fillSeconds(bars, 102)).toEqual([]);
-    fillSeconds(bars, 100 + MAX_SECONDS * 2);
-    expect(bars.length).toBe(MAX_SECONDS);
-    expect(bars[bars.length - 1].close).toBe(10);
-  });
-});
-
 describe("chart time", () => {
   it("labels axes and crosshair in the phone's local time", () => {
     const ts = Date.UTC(2026, 9, 21, 9, 48, 5) / 1000;
@@ -264,5 +232,14 @@ describe("admin helpers", () => {
     expect(filterUsers(rows, "@ANNA").map((r) => r.id)).toEqual(["7"]);
     expect(filterUsers(rows, "бор").map((r) => r.id)).toEqual(["8"]);
     expect(filterUsers(rows, "8").map((r) => r.id)).toEqual(["8"]);
+  });
+});
+
+describe("close countdown", () => {
+  it("counts down to the end of the candle like exchanges", () => {
+    expect(untilClose(Date.UTC(2026, 9, 21, 14, 29, 19) / 1000, 60)).toBe("00:41");
+    expect(untilClose(Date.UTC(2026, 9, 21, 14, 29, 19) / 1000, 14400)).toBe("1:30:41");
+    // неделя Bybit — с понедельника: среда 21.10 14:29:19 UTC → до понедельника 26.10 00:00
+    expect(untilClose(Date.UTC(2026, 9, 21, 14, 29, 19) / 1000, 604800)).toBe("4д 09:30");
   });
 });

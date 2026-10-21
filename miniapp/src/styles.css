@@ -573,3 +573,17 @@ button.card { text-align: left; width: 100%; }
 .svc-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--inset); overflow: hidden; }
 .svc-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 .svc-note { margin: 10px 0 0; }
+
+/* отсчёт до закрытия свечи под ценой на правой шкале, как у бирж */
+.countdown { position: absolute; right: 0; z-index: 2; box-sizing: border-box; padding: 1px 0; text-align: center;
+  font-size: 10px; font-weight: 700; color: var(--text); background: var(--toast-bg); border-radius: 0 0 4px 4px;
+  pointer-events: none; }
+
+/* TradingView: тот же график, что на биржах */
+.chart-card .segmented { margin-bottom: 12px; }
+.chart-card.market .chart-area { height: 420px; }
+.chart-card.market.tall .chart-area { height: 520px; }
+.tv-wrap { position: relative; width: 100%; height: 100%; border-radius: 14px; overflow: hidden; }
+.tv-chart { width: 100%; height: 100%; }
+.tv-chart iframe { border: 0; }
+.tv-failed { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }

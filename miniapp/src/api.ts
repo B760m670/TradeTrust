@@ -140,13 +140,6 @@ export interface BtcTrend {
   error?: string;
 }
 
-/** Сделка на рынке (не бота): время в мс, цена, объём. */
-export interface MarketTrade {
-  t: number;
-  p: number;
-  v: number;
-}
-
 export interface ChartData {
   coin: string;
   interval: string;
@@ -202,7 +195,6 @@ type Message = { message: string };
 export const api = {
   status: () => request<Status>("/api/status"),
   portfolio: () => request<Portfolio>("/api/portfolio"),
-  trades: (coin: string) => request<{ coin: string; trades: MarketTrade[] }>(`/api/trades?coin=${encodeURIComponent(coin)}`),
   chart: (coin: string, interval = "4h") =>
     request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}`),
   confirm: (id: string) => request<Message>(`/api/proposals/${id}/confirm`, "POST"),
