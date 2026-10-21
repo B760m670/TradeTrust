@@ -7,7 +7,6 @@ vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
-vi.mock("./components/TradingViewChart", () => ({ TradingViewChart: ({ coin }: { coin: string }) => <div data-testid="tradingview">{coin}</div> }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
 
 const PORTFOLIO = {
@@ -86,7 +85,7 @@ beforeEach(() => {
       : url === "/api/portfolio" ? PORTFOLIO
       : url === "/api/admin" ? ADMIN
       : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
-        time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
+        time: [1000, 1900], open: [10, 11], high: [12, 12], low: [9, 10], close: [11, 11.5], volume: [5, 6], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
     return new Response(JSON.stringify(body), { status: 200 });
   }));
@@ -183,12 +182,14 @@ describe("mini app", () => {
     expect(document.querySelector(".bottom-nav")).toBeNull();
     const nav = within(document.querySelector(".side-nav") as HTMLElement);
     fireEvent.click(nav.getByRole("button", { name: "Торговать" }));
-    expect((await screen.findByTestId("tradingview")).textContent).toBe("SOL");  // по умолчанию — график как на бирже
-    fireEvent.click(screen.getByRole("radio", { name: "Бот · 4ч" }));
+    // один график: история с сервера бота, по умолчанию 15 минут
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=15m")).toBe(true));
+    fireEvent.click(screen.getByRole("radio", { name: "4ч" }));
     await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=4h")).toBe(true));
+    expect(localStorage.getItem("chart_tf")).toBe("4h");
     expect(await screen.findByTestId("chart")).toBeTruthy();
-    await screen.findByText(/по ним бот решает/);
-    expect(localStorage.getItem("chart_view")).toBe("bot");
+    fireEvent.click(screen.getByRole("button", { name: "EMA" }));
+    expect(localStorage.getItem("chart_ema")).toBe("off");
     fireEvent.click(nav.getByRole("button", { name: "Рынки" }));
     await screen.findByText("Сигнал бота");
   });

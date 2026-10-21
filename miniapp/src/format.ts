@@ -13,8 +13,8 @@ export function price(x: number | null | undefined): string {
 }
 
 /** Цена на осях графиков: точнее, чтобы на мелких таймфреймах подписи не сливались (287,41 · 0,19125). */
-export function chartPrice(x: number): string {
-  const a = Math.abs(x);
+export function chartPrice(x: number, ref = x): string {
+  const a = Math.abs(ref); // по одной цене выбираем точность для всей шкалы, чтобы подписи были одинаковыми
   const digits = a >= 100 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 5 : 8;
   return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(x);
 }

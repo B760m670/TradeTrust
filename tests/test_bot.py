@@ -935,3 +935,20 @@ def test_api_manual_order(make_bot):
         assert e.value.code == 400  # своего почти не осталось — меньше минимального ордера
     finally:
         server.shutdown()
+
+
+def test_chart_returns_volume_and_older_history_before_end(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    seen = {}
+
+    def candles(symbol, interval, limit=1000, end=None):
+        seen["end"] = end
+        return ex.data[symbol]
+    ex.candles = candles
+    full = bot.chart("SOL", "4h")
+    assert full["volume"][-1] == 1.0 and seen["end"] is None
+    cut = full["time"][-10]
+    older = bot.chart("SOL", "4h", end=cut * 1000)
+    assert seen["end"] == cut * 1000
+    assert older["time"] and older["time"][-1] < cut and older["time"][-1] == full["time"][-11]

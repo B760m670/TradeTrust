@@ -120,11 +120,12 @@ class BybitClient:
         self.time_offset = server_ms - int(time.time() * 1000)
 
     # --- рынок -------------------------------------------------------------
-    def candles(self, symbol: str, interval: str = "4h", limit: int = 1000) -> pd.DataFrame:
-        """Только закрытые свечи, по возрастанию времени; индекс — время открытия (UTC)."""
+    def candles(self, symbol: str, interval: str = "4h", limit: int = 1000, end: int | None = None) -> pd.DataFrame:
+        """Только закрытые свечи, по возрастанию времени; индекс — время открытия (UTC).
+        end — время в мс: свечи, открытые не позже него (для подгрузки истории)."""
         code, ms = INTERVALS[interval]
         rows = self._request("GET", "/v5/market/kline",
-                             {"category": "spot", "symbol": symbol, "interval": code, "limit": limit})["list"]
+                             {"category": "spot", "symbol": symbol, "interval": code, "limit": limit, "end": end})["list"]
         now = int(time.time() * 1000) + self.time_offset
         rows = [r for r in rows if int(r[0]) + ms <= now]
         df = pd.DataFrame([r[:6] for r in rows], columns=["time", "open", "high", "low", "close", "volume"])
@@ -205,8 +206,8 @@ class BybitExchange:
             self._instruments[symbol] = self.c.instrument(symbol)
         return self._instruments[symbol]
 
-    def candles(self, symbol: str, interval: str, limit: int = 1000) -> pd.DataFrame:
-        return self.c.candles(symbol, interval, limit)
+    def candles(self, symbol: str, interval: str, limit: int = 1000, end: int | None = None) -> pd.DataFrame:
+        return self.c.candles(symbol, interval, limit, end)
 
     def last_price(self, symbol: str) -> float:
         return self.c.last_price(symbol)

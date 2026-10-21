@@ -16,6 +16,7 @@ export interface LiveCandle {
   high: number;
   low: number;
   close: number;
+  volume?: number;
 }
 
 type Listener = (data: Record<string, unknown>) => void;
@@ -161,7 +162,8 @@ export function useLiveCandle(coin: string, code = "240"): LiveCandle | null {
     setCandle(null);
     let latest: LiveCandle | null = null;
     const off = feed.subscribe(`kline.${code}.${coin}USDT`, (d) => {
-      const c = { time: num(d.start) / 1000, open: num(d.open), high: num(d.high), low: num(d.low), close: num(d.close) };
+      const c = { time: num(d.start) / 1000, open: num(d.open), high: num(d.high), low: num(d.low), close: num(d.close),
+        volume: num(d.volume) || 0 };
       if ([c.time, c.open, c.high, c.low, c.close].every(Number.isFinite)) latest = c;
     });
     const timer = setInterval(() => latest && setCandle(latest), FLUSH_MS);

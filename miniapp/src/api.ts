@@ -179,6 +179,7 @@ export interface ChartData {
   high: (number | null)[];
   low: (number | null)[];
   close: (number | null)[];
+  volume?: (number | null)[];
   ema_fast: (number | null)[];
   ema_slow: (number | null)[];
   atr: (number | null)[];
@@ -236,8 +237,8 @@ type Message = { message: string };
 export const api = {
   status: () => request<Status>("/api/status"),
   portfolio: () => request<Portfolio>("/api/portfolio"),
-  chart: (coin: string, interval = "4h") =>
-    request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}`),
+  chart: (coin: string, interval = "4h", end?: number) =>
+    request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}${end ? `&end=${end}` : ""}`),
   confirm: (id: string) => request<Message>(`/api/proposals/${id}/confirm`, "POST"),
   reject: (id: string) => request<Message>(`/api/proposals/${id}/reject`, "POST"),
   setMode: (mode: Mode) => request<Message>("/api/mode", "POST", { mode }),

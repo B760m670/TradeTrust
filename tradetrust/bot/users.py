@@ -43,7 +43,9 @@ class CachedMarket:
             self.cache[key] = (time.time(), value)
         return value
 
-    def candles(self, symbol, interval, limit=1000):
+    def candles(self, symbol, interval, limit=1000, end=None):
+        if end:  # старая история не меняется — её не кэшируем, она нужна редко
+            return self.market.candles(symbol, interval, limit, end)
         return self._get(("candles", symbol, interval, limit), self.candles_ttl,
                          lambda: self.market.candles(symbol, interval, limit))
 

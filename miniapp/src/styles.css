@@ -587,15 +587,6 @@ button.card { text-align: left; width: 100%; }
   font-size: 10px; font-weight: 700; color: var(--text); background: var(--toast-bg); border-radius: 0 0 4px 4px;
   pointer-events: none; }
 
-/* TradingView: тот же график, что на биржах */
-.chart-card .segmented { margin-bottom: 12px; }
-.chart-card.market .chart-area { height: 420px; }
-.chart-card.market.tall .chart-area { height: 520px; }
-.tv-wrap { position: relative; width: 100%; height: 100%; border-radius: 14px; overflow: hidden; }
-.tv-chart { width: 100%; height: 100%; }
-.tv-chart iframe { border: 0; }
-.tv-failed { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
-
 /* --- биржевая структура: Главная · Рынки · Торговать · Активы ------------------------- */
 .bot-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .bot-head .btn { display: inline-flex; align-items: center; gap: 6px; }
@@ -826,3 +817,16 @@ h3.section-title { margin: 22px 0 10px; }
 .sec-head .section-title { margin: 0; }
 .price-main .live-badge { align-self: flex-start; }
 .sig-name span { white-space: nowrap; }
+
+/* график: таймфреймы и переключатели над ним */
+.chart-card { gap: 10px; }
+.chart-tools { display: flex; align-items: center; gap: 8px; }
+.chart-tools .tf-picker { flex: 1; min-width: 0; margin: 0; }
+.tf-picker button { min-width: 0; height: 30px; padding: 0 9px; border-radius: 7px; }
+.tf-picker button.on { background: var(--surface-2); color: var(--text); }
+.chart-switches { display: flex; gap: 4px; flex-shrink: 0; }
+.chart-switches button { height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; background: transparent;
+  color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
+.chart-switches button.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.chart-area { height: 340px; }
+.chart-card.tall .chart-area { height: 460px; }
