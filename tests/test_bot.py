@@ -734,3 +734,15 @@ def test_api_rejects_unknown_interval(make_bot):
         assert e.value.code == 400
     finally:
         server.shutdown()
+
+
+def test_each_candle_leaves_a_visible_scan_summary(make_bot):
+    bot, ex, _ = make_bot("auto", coins=("SOL", "ETH"))
+    ex.set("SOL", cross_on_last_bar())
+    ex.set("ETH", trend_down_last_bar())
+    bot.on_candle_close()
+    scan = bot.status()["last_scan"]
+    assert scan["coins"] == 2 and scan["up"] == 1 and scan["entries"] == ["SOL"] and scan["exits"] == []
+    assert "Проверка рынка: 2 монет, в росте 1, вход: SOL" in bot.store.events()[0]["text"]
+    bot.on_candle_close()  # та же свеча — повторно не записывается
+    assert sum("Проверка рынка" in e["text"] for e in bot.store.events()) == 1

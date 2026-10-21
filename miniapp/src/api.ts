@@ -105,6 +105,17 @@ export interface Status {
   settings_limits: Record<NumericSetting, { min: number; max: number }>;
   all_coins: string[];
   equity_history: [number, number][]; // [время, капитал] после каждой 4ч свечи
+  last_scan: Scan | null;
+}
+
+/** Итог последней проверки рынка (после закрытия 4ч свечи). */
+export interface Scan {
+  ts: number;
+  bar: number;
+  coins: number;
+  up: number;
+  entries: string[];
+  exits: string[];
 }
 
 export interface ChartData {

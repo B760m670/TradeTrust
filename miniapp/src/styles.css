@@ -295,6 +295,14 @@ button.card { text-align: left; width: 100%; }
 .app.wide .positions { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .app.wide .chart-card { margin-top: 0; }
 
+/* ---------- последняя проверка рынка ---------- */
+.scan-card { margin-top: 12px; gap: 8px; }
+.scan-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scan-head strong { font-size: 15px; }
+.scan-head .muted { margin-left: auto; }
+.scan-facts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+.scan-facts strong { color: var(--text); }
+
 /* ---------- сигналы ---------- */
 .filters { display: flex; gap: 8px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
 .filters::-webkit-scrollbar { display: none; }
