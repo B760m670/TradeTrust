@@ -280,10 +280,9 @@ class Bot:
                 return
             self.store.set("last_bar", bar)
 
-            for p in self.store.positions():
-                s = signals.get(p.coin, {})
-                if s.get("trend_down"):
-                    self.close(p.coin, "signal")
+            exits = [p.coin for p in self.store.positions() if signals.get(p.coin, {}).get("trend_down")]
+            for coin in exits:
+                self.close(coin, "signal")
 
             self.expire_proposals()
             if self.mode != "signals" and not self.paused and self.daily_loss_hit():
@@ -295,6 +294,18 @@ class Bot:
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
             self.record_equity()
+            self.record_scan(signals, bar, [c for c, _ in entries], exits)
+
+    def record_scan(self, signals: dict, bar: int, entries: list[str], exits: list[str]) -> None:
+        """Итог проверки рынка — чтобы было видно, что бот работает, даже когда сделок нет."""
+        ok = {c: s for c, s in signals.items() if c in self.cfg.coins and not s.get("error")}
+        up = sum(1 for s in ok.values() if not s.get("trend_down"))
+        scan = {"ts": now(), "bar": bar, "coins": len(ok), "up": up, "entries": entries, "exits": exits}
+        self.store.set("last_scan", scan)
+        found = f"вход: {', '.join(entries)}" if entries else "сигналов на вход нет"
+        if exits:
+            found += f"; выход: {', '.join(exits)}"
+        self.store.log(f"🔎 Проверка рынка: {len(ok)} монет, в росте {up}, {found}")
 
     # --- портфель: весь счёт, а не только часть бота ---------------------------
     def portfolio(self) -> dict:
@@ -592,6 +603,7 @@ class Bot:
             "settings_limits": {k: {"min": lo, "max": hi} for k, (_, lo, hi) in LIMITS.items()},
             "all_coins": [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)],
             "equity_history": self.store.equity_history(now() - 90 * 86400),
+            "last_scan": self.store.get("last_scan"),
         }
 
 

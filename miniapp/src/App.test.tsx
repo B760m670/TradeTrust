@@ -223,4 +223,10 @@ describe("mini app", () => {
     await screen.findByText("100,00 $", {}, { timeout: 2000 }); // 10 TON × 10 $
     expect(screen.getByText("+50,00 $ · +3,3%")).toBeTruthy(); // TON удвоился: +50 $ к прежним 1500 $
   });
+
+  it("shows when the bot last checked the market", async () => {
+    await renderApp();
+    await screen.findByText(/Бот проверил рынок в/);
+    expect(screen.getByText(/следующая в/)).toBeTruthy();
+  });
 });

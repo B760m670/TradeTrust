@@ -1,10 +1,10 @@
 import type { CSSProperties } from "react";
-import { api, type Position, type Proposal, type Status } from "../api";
+import { api, type Position, type Proposal, type Scan, type Status } from "../api";
 import type { Tab } from "../App";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon } from "../components/icons";
-import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Tile, Value } from "../components/ui";
+import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, StatusDot, Tile, Value } from "../components/ui";
 import { clock, dateTime, pct, price, tone, usd } from "../format";
 import { useNow } from "../hooks";
 import { useLiveTickers } from "../live";
@@ -20,6 +20,40 @@ interface Props {
 }
 
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
+
+function ScanCard({ scan, next, fast, slow }: { scan: Scan | null; next: number; fast: number; slow: number }) {
+  if (!scan) {
+    return (
+      <Card className="scan-card">
+        <div className="scan-head"><StatusDot tone="amber" /><strong>Первая проверка рынка в {clock(next)}</strong></div>
+        <p className="muted small">Бот смотрит все монеты сразу после закрытия каждой 4-часовой свечи.</p>
+      </Card>
+    );
+  }
+  const quiet = scan.entries.length === 0 && scan.exits.length === 0;
+  const weak = scan.coins > 0 && scan.up / scan.coins < 0.3;
+  return (
+    <Card className="scan-card">
+      <div className="scan-head">
+        <StatusDot tone="up" />
+        <strong>Бот проверил рынок в {clock(scan.ts)}</strong>
+        <span className="muted small">следующая в {clock(next)}</span>
+      </div>
+      <div className="scan-facts">
+        <span><strong className="num">{scan.coins}</strong> монет</span>
+        <span>в росте <strong className="num">{scan.up}</strong></span>
+        <span>{scan.entries.length ? <>вход: <strong>{scan.entries.join(", ")}</strong></> : "сигналов на вход нет"}</span>
+        {scan.exits.length > 0 && <span>выход: <strong>{scan.exits.join(", ")}</strong></span>}
+      </div>
+      {quiet && (
+        <p className="muted small">
+          Бот покупает, только когда у монеты начинается рост: средняя EMA {fast} пересекает EMA {slow} снизу вверх.
+          {weak ? " Сейчас рынок в основном падает — в такое время система ждёт и бережёт деньги." : " Пока таких пересечений нет."}
+        </p>
+      )}
+    </Card>
+  );
+}
 
 function ProposalCard({ p, busy, act, i }: { p: Proposal; busy: boolean; act: Act; i: number }) {
   const left = Math.max(0, Math.round((p.expires_at - Date.now() / 1000) / 60));
@@ -139,6 +173,8 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Prop
         <Tile label="До стопов" value={`${usd(risk)} $`} hint={`${pct(riskPct)} капитала`} tone={risk > 0 ? "down" : undefined} />
         <Tile label="Свеча закроется" value={clock(nextCandleClose(now))} hint="таймфрейм 4 ч" />
       </div>
+
+      <ScanCard scan={s.last_scan ?? null} next={nextCandleClose(now)} fast={s.settings.ema_fast} slow={s.settings.ema_slow} />
 
       <div className="overview-grid">
         <div className="col-main">
