@@ -30,7 +30,8 @@ class Config:
     atr_mult: float = 2.0
     ema_fast: int = 20
     ema_slow: int = 50
-    btc_filter: bool = False
+    btc_filter: bool = True            # не входить, когда BTC ниже средней за btc_days — scripts/context_study.py
+    btc_days: int = 50
     capital_usdt: float = 0.0          # сколько USDT отдано боту; 0 — весь свободный USDT
     max_positions: int = 25
     max_position_pct: float = 25.0     # не больше этой доли капитала в одной монете
@@ -66,7 +67,8 @@ class Config:
             atr_mult=_float("ATR_MULT", 2.0),
             ema_fast=int(_float("EMA_FAST", 20)),
             ema_slow=int(_float("EMA_SLOW", 50)),
-            btc_filter=_env("BTC_FILTER", "0").lower() in ("1", "true", "yes", "да"),
+            btc_filter=_env("BTC_FILTER", "1").lower() in ("1", "true", "yes", "да"),
+            btc_days=int(_float("BTC_DAYS", 50)),
             capital_usdt=_float("BOT_CAPITAL_USDT", 0.0),
             max_positions=int(_float("MAX_POSITIONS", 25)),
             max_position_pct=_float("MAX_POSITION_PCT", 25.0),

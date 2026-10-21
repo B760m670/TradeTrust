@@ -17,7 +17,7 @@ from typing import Protocol
 import pandas as pd
 
 from .. import backtest as bt
-from ..indicators import btc_regime
+from ..indicators import btc_regime, sma
 from ..research import COINS
 from .config import Config
 from .store import Position, Proposal, Store, now
@@ -64,6 +64,7 @@ LIMITS: dict[str, tuple[type, float, float]] = {
     "proposal_ttl_min": (int, 15, 240),
     "report_hour_utc": (int, 0, 23),
     "trend_days": (int, 30, 160),  # 160 дней — столько 4ч свечей (1000) отдаёт биржа за раз
+    "btc_days": (int, 20, 200),
 }
 FLAGS = ("btc_filter", "daily_report", "trend_filter")
 EDITABLE = (*LIMITS, *FLAGS, "coins")
@@ -71,7 +72,7 @@ LABELS = {
     "risk_pct": "риск на сделку, %", "max_positions": "позиций максимум", "max_position_pct": "в одной монете, %",
     "max_total_risk_pct": "общий риск, %", "daily_loss_limit_pct": "дневной лимит убытка, %",
     "capital_usdt": "капитал бота, USDT", "proposal_ttl_min": "предложение действует, мин",
-    "btc_filter": "фильтр BTC", "coins": "монеты",
+    "btc_filter": "пауза, когда BTC падает", "btc_days": "средняя BTC, дней", "coins": "монеты",
     "daily_report": "ежедневный отчёт", "report_hour_utc": "время отчёта (UTC), ч",
     "trend_filter": "только монеты в росте", "trend_days": "рост за, дней",
 }
@@ -79,6 +80,26 @@ LABELS = {
 # Обоснование и цифры — README, «Портфель целиком», scripts/portfolio_study.py.
 STRATEGY_V2 = {"risk_pct": 0.3, "max_positions": 25, "max_total_risk_pct": 10.0, "trend_filter": True}
 OLD_DEFAULTS = {"risk_pct": 1.0, "max_positions": 5, "max_total_risk_pct": 5.0, "trend_filter": False}
+# Версия 3 (21.10.2026): новые сделки — только когда биткоин выше своей 50-дневной средней.
+# Обоснование — README, «Обстановка на рынке», scripts/context_study.py.
+STRATEGY_V3 = {"btc_filter": True, "btc_days": 50}
+OLD_V3 = {"btc_filter": False, "btc_days": 50}
+MIGRATIONS = (
+    (2, STRATEGY_V2, OLD_DEFAULTS, "по итогам проверки всего счёта на истории 2022–2026"),
+    (3, STRATEGY_V3, OLD_V3, "по итогам проверки обстановки на рынке на истории 2022–2026: "
+                             "новые сделки — только когда биткоин выше 50-дневной средней"),
+)
+
+
+def btc_trend(daily: pd.DataFrame, days: int, bar: pd.Timestamp) -> dict:
+    """Биткоин к своей средней за days дней — как btc_regime на свече bar: по последнему дню, закрытому к её началу."""
+    close = daily["close"]
+    avg = sma(close, days)
+    known = close.index + pd.Timedelta(days=1) <= bar
+    if not known.any() or pd.isna(avg[known].iloc[-1]):
+        return {"ok": False, "days": days, "error": "мало истории по BTC"}
+    c, a = float(close[known].iloc[-1]), float(avg[known].iloc[-1])
+    return {"ok": c > a, "price": c, "avg": a, "days": days}
 
 
 def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) -> dict:
@@ -140,6 +161,7 @@ class Bot:
         self.lock = threading.RLock()
         self.params = bt.Params(fast=cfg.ema_fast, slow=cfg.ema_slow, atr_mult=cfg.atr_mult, risk=cfg.risk_pct / 100)
         self.defaults = self.settings()  # значения из .env — к ним возвращает «Сбросить»
+        self.btc: dict | None = (self.store.get("last_scan") or {}).get("btc")  # биткоин к своей средней
         saved = self.store.get("settings", {})
         try:
             self._apply(check_settings(saved, self.defaults, self.defaults["coins"]))
@@ -148,17 +170,19 @@ class Bot:
         self._migrate_strategy()
 
     def _migrate_strategy(self) -> None:
-        """Один раз переводит уже работающего бота на стратегию v2 — только те настройки,
+        """Один раз переводит уже работающего бота на новую версию стратегии — только те настройки,
         которые владелец не менял (совпадают со старыми значениями по умолчанию)."""
-        if self.store.get("strategy_version", 1) >= 2:
-            return
-        self.store.set("strategy_version", 2)
-        if not self.store.get("last_bar"):
-            return  # новая установка — значения по умолчанию уже новые
-        current = self.settings()
-        changes = {k: v for k, v in STRATEGY_V2.items() if current[k] == OLD_DEFAULTS[k]}
-        if changes:
-            self.update_settings(changes, "по итогам проверки всего счёта на истории 2022–2026")
+        version = self.store.get("strategy_version", 1)
+        for target, new, old, source in MIGRATIONS:
+            if version >= target:
+                continue
+            self.store.set("strategy_version", target)
+            if not self.store.get("last_bar"):
+                continue  # новая установка — значения по умолчанию уже новые
+            current = self.settings()
+            changes = {k: v for k, v in new.items() if current[k] == old[k] and current[k] != v}
+            if changes:
+                self.update_settings(changes, source)
 
     # --- настройки -----------------------------------------------------------
     def settings(self) -> dict:
@@ -267,12 +291,19 @@ class Bot:
 
     # --- сигналы -------------------------------------------------------------
     def scan(self) -> dict[str, dict]:
-        regime_src = self.ex.candles("BTCUSDT", "1d", 400) if self.cfg.btc_filter else None
+        regime_src, self.btc = None, None
+        if self.cfg.btc_filter:
+            try:
+                regime_src = self.ex.candles("BTCUSDT", "1d", 400)
+            except Exception as exc:  # без биткоина не понять обстановку — новые входы пропускаем
+                log.warning("scan BTC 1d: %s", exc)
+                self.btc = {"ok": False, "days": self.cfg.btc_days, "error": f"нет данных по BTC ({exc})"}
         out = {}
         for coin in self.watched_coins():
             try:
                 df = self.ex.candles(self.symbol(coin), "4h", 1000)
-                regime = btc_regime(regime_src, df.index) if regime_src is not None else None
+                regime = (btc_regime(regime_src, df.index, self.cfg.btc_days) if regime_src is not None
+                          else pd.Series(False, index=df.index) if self.btc else None)
                 data = bt.prepare(df, self.params, regime)
                 last = data.iloc[-1]
                 lookback = self.cfg.trend_days * 6  # 4ч свечей в сутках
@@ -290,7 +321,28 @@ class Bot:
             except Exception as exc:
                 log.warning("scan %s: %s", coin, exc)
                 out[coin] = {"error": str(exc)}
+        bars = [s["bar"] for s in out.values() if "bar" in s]
+        if regime_src is not None and bars:
+            self.btc = btc_trend(regime_src, self.cfg.btc_days, pd.Timestamp(max(bars), unit="s", tz="UTC"))
         return out
+
+    def report_btc(self) -> None:
+        """Сообщает, когда биткоин пересёк свою среднюю: бот сам ставит новые входы на паузу и снимает её."""
+        b = self.btc
+        prev = self.store.get("btc_ok")
+        ok = None if b is None else b["ok"]
+        self.store.set("btc_ok", ok)
+        if ok is None or ok == prev or (prev is None and ok):
+            return
+        if ok:
+            self.notify(f"🟢 Биткоин снова выше {b['days']}-дневной средней ({fmt(b['price'])} > {fmt(b['avg'])}): "
+                        "рынок выправился, новые входы разрешены.")
+        elif "error" in b:
+            self.notify(f"⚠️ Новые входы на паузе: {b['error']}.")
+        else:
+            self.notify(f"🔴 Биткоин ниже {b['days']}-дневной средней ({fmt(b['price'])} < {fmt(b['avg'])}): "
+                        "рынок в целом падает, ложных входов в такое время больше. Новые сделки на паузе, "
+                        "открытые веду как обычно — стоп и выход по тренду.")
 
     def on_candle_close(self) -> None:
         """Обрабатывает последнюю закрытую 4ч свечу (один раз на свечу)."""
@@ -315,20 +367,45 @@ class Bot:
                 self.pause("дневной лимит убытка")
                 self.notify(f"⛔ Дневной убыток достиг {self.cfg.daily_loss_limit_pct}% — новые сделки на паузе. "
                             "Снять: /resume")
+            self.report_btc()
             entries = [(c, s) for c, s in signals.items()
                        if c in self.cfg.coins and s.get("cross_up") and s.get("regime_ok") and s.get("trend_ok", True)]
+            held_back = [c for c, s in signals.items()
+                         if c in self.cfg.coins and s.get("cross_up") and s.get("trend_ok", True) and not s.get("regime_ok")
+                         and not self.store.position(c)]
+            if held_back:
+                self.notify(f"⏸ Сигнал на вход: {', '.join(held_back)} — пропускаю: {self.btc_reason()}.")
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
             self.record_equity()
-            self.record_scan(signals, bar, [c for c, _ in entries], exits)
+            self.record_scan(signals, bar, [c for c, _ in entries], exits, held_back)
 
-    def record_scan(self, signals: dict, bar: int, entries: list[str], exits: list[str]) -> None:
+    def btc_reason(self) -> str:
+        b = self.btc or {}
+        if "error" in b:
+            return b["error"]
+        return f"биткоин ниже {b.get('days', self.cfg.btc_days)}-дневной средней, рынок в целом падает"
+
+    def entry_reason(self, s: dict) -> str:
+        """Почему бот входит — коротко, для сообщения о сделке."""
+        why = [f"EMA {self.cfg.ema_fast} пересекла EMA {self.cfg.ema_slow} снизу вверх"]
+        if self.cfg.trend_filter and s.get("momentum") is not None:
+            why.append(f"монета за {self.cfg.trend_days} дн. {s['momentum'] * 100:+.0f}%")
+        if self.btc and self.btc.get("ok"):
+            why.append(f"биткоин выше {self.btc['days']}-дневной средней")
+        return "Почему: " + ", ".join(why) + "."
+
+    def record_scan(self, signals: dict, bar: int, entries: list[str], exits: list[str],
+                    held_back: list[str] = ()) -> None:
         """Итог проверки рынка — чтобы было видно, что бот работает, даже когда сделок нет."""
         ok = {c: s for c, s in signals.items() if c in self.cfg.coins and not s.get("error")}
         up = sum(1 for s in ok.values() if not s.get("trend_down"))
-        scan = {"ts": now(), "bar": bar, "coins": len(ok), "up": up, "entries": entries, "exits": exits}
+        scan = {"ts": now(), "bar": bar, "coins": len(ok), "up": up, "entries": entries, "exits": exits,
+                "held_back": list(held_back), "btc": self.btc}
         self.store.set("last_scan", scan)
         found = f"вход: {', '.join(entries)}" if entries else "сигналов на вход нет"
+        if held_back:
+            found += f"; пропущено из-за BTC: {', '.join(held_back)}"
         if exits:
             found += f"; выход: {', '.join(exits)}"
         self.store.log(f"🔎 Проверка рынка: {len(ok)} монет, в росте {up}, {found}")
@@ -392,6 +469,10 @@ class Bot:
         signals = self.store.get("signals", {})
         ups = sum(1 for c, s in signals.items() if c in self.cfg.coins and not s.get("error") and not s.get("trend_down"))
         lines.append(f"Монет в росте: {ups} из {len(self.cfg.coins)}")
+        b = (self.store.get("last_scan") or {}).get("btc")
+        if b and "error" not in b:
+            lines.append(f"Биткоин {'выше' if b['ok'] else 'ниже'} {b['days']}-дневной средней — "
+                         f"{'новые входы разрешены' if b['ok'] else 'новые входы на паузе'}")
         state = f"пауза ({self.paused})" if self.paused else "работает"
         lines.append(f"Режим: {MODE_NAMES.get(self.mode, self.mode)}, бот {state}")
         return "\n".join(lines)
@@ -411,7 +492,8 @@ class Bot:
 
     def handle_entry_signal(self, coin: str, s: dict) -> None:
         price, stop = s["price"], s["price"] - self.cfg.atr_mult * s["atr"]
-        head = f"📈 ВХОД {coin} ~{fmt(price)}, стоп {fmt(stop)} (−{(1 - stop / price) * 100:.1f}%)"
+        reason = self.entry_reason(s)
+        head = f"📈 ВХОД {coin} ~{fmt(price)}, стоп {fmt(stop)} (−{(1 - stop / price) * 100:.1f}%)\n{reason}"
         if self.mode == "signals":
             self.notify(head + "\nРежим «только сигналы» — сделку не открываю.")
             return
@@ -427,7 +509,7 @@ class Bot:
             self.notify(f"{head}\nНе открываю: {why}.")
             return
         if self.mode == "auto":
-            self.open(coin, stop, ref_price=price)
+            self.open(coin, stop, ref_price=price, reason=reason)
             return
         prop = Proposal(id=uuid.uuid4().hex[:12], coin=coin, symbol=self.symbol(coin), price=price, stop=stop,
                         qty=float(plan.qty), risk_usdt=plan.risk_usdt, created_at=now(),
@@ -479,7 +561,7 @@ class Bot:
         return "Уже обработано"
 
     # --- исполнение ------------------------------------------------------------
-    def open(self, coin: str, stop: float, ref_price: float) -> str:
+    def open(self, coin: str, stop: float, ref_price: float, reason: str = "") -> str:
         with self.lock:
             if self.store.position(coin):
                 return f"По {coin} уже есть позиция"
@@ -517,7 +599,7 @@ class Bot:
                            (fill.avg_price - float(trigger)) * float(qty))
             self.store.save_position(pos)
             text = (f"✅ Куплено {qty} {coin} по {fmt(fill.avg_price)} (≈{float(qty) * fill.avg_price:,.2f} USDT). "
-                    f"Стоп {fmt(float(trigger))}, риск {pos.risk_usdt:,.2f} USDT")
+                    f"Стоп {fmt(float(trigger))}, риск {pos.risk_usdt:,.2f} USDT" + (f"\n{reason}" if reason else ""))
             if self.mode == "auto":
                 self.notify(text)  # notify() сам пишет событие
             else:

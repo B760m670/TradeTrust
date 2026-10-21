@@ -79,6 +79,7 @@ export interface EditableSettings {
   proposal_ttl_min: number;
   report_hour_utc: number;
   btc_filter: boolean;
+  btc_days: number;
   daily_report: boolean;
   trend_filter: boolean;
   trend_days: number;
@@ -120,6 +121,18 @@ export interface Scan {
   up: number;
   entries: string[];
   exits: string[];
+  /** сигналы на вход, которые бот пропустил, потому что биткоин ниже своей средней */
+  held_back?: string[];
+  btc?: BtcTrend | null;
+}
+
+/** Биткоин к своей средней: ниже — бот не открывает новые сделки. */
+export interface BtcTrend {
+  ok: boolean;
+  days: number;
+  price?: number;
+  avg?: number;
+  error?: string;
 }
 
 export interface ChartData {

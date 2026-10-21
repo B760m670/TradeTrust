@@ -8,7 +8,7 @@ import {
 
 const editable: EditableSettings = {
   risk_pct: 1, max_positions: 5, max_position_pct: 25, max_total_risk_pct: 5, daily_loss_limit_pct: 3,
-  capital_usdt: 0, proposal_ttl_min: 60, report_hour_utc: 7, btc_filter: false, daily_report: true,
+  capital_usdt: 0, proposal_ttl_min: 60, report_hour_utc: 7, btc_filter: false, btc_days: 50, daily_report: true,
   trend_filter: true, trend_days: 120, coins: ["BTC", "ETH"],
 };
 const settings: Settings = { ...editable, atr_mult: 2, ema_fast: 20, ema_slow: 50 };
