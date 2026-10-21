@@ -93,4 +93,7 @@ jobs:
             ghcr.io/b760m670/tradetrust:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILT_AT=${{ github.event.head_commit.timestamp }}
 

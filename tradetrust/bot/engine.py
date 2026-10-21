@@ -162,6 +162,7 @@ class Bot:
         self.params = bt.Params(fast=cfg.ema_fast, slow=cfg.ema_slow, atr_mult=cfg.atr_mult, risk=cfg.risk_pct / 100)
         self.defaults = self.settings()  # значения из .env — к ним возвращает «Сбросить»
         self.btc: dict | None = (self.store.get("last_scan") or {}).get("btc")  # биткоин к своей средней
+        self.report_extras: list = []  # строки для ежедневной сводки от других частей (демо-счета — у владельца)
         saved = self.store.get("settings", {})
         try:
             self._apply(check_settings(saved, self.defaults, self.defaults["coins"]))
@@ -475,6 +476,14 @@ class Bot:
                          f"{'новые входы разрешены' if b['ok'] else 'новые входы на паузе'}")
         state = f"пауза ({self.paused})" if self.paused else "работает"
         lines.append(f"Режим: {MODE_NAMES.get(self.mode, self.mode)}, бот {state}")
+        for extra in self.report_extras:
+            try:
+                line = extra()
+            except Exception:
+                log.exception("строка сводки")
+                continue
+            if line:
+                lines.append(line)
         return "\n".join(lines)
 
     def maybe_daily_report(self, ts: float | None = None) -> bool:

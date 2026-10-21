@@ -30,7 +30,6 @@ HELP = """Команды:
 
 OWNER_HELP = HELP + "\n/users — демо-счета пользователей"
 NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start."
-FULL = "Демо-счета сейчас закончились — попробуйте позже."
 
 
 
@@ -43,6 +42,8 @@ class Telegram:
         self.bot: Bot | None = None
         self.users = None  # Users — демо-счета, если включены
         self.offset = 0
+        self.ok_at: float | None = None  # для админки: когда Telegram последний раз ответил
+        self.error = ""
 
     def _call(self, method: str, **params) -> dict:
         resp = self.http.post(f"{self.url}/{method}", json=params, timeout=60)
@@ -105,12 +106,15 @@ class Telegram:
     def _loop(self) -> None:
         while True:
             try:
-                for upd in self._call("getUpdates", offset=self.offset, timeout=50,
-                                      allowed_updates=["message", "callback_query"]):
+                updates = self._call("getUpdates", offset=self.offset, timeout=50,
+                                     allowed_updates=["message", "callback_query"])
+                self.ok_at, self.error = time.time(), ""
+                for upd in updates:
                     self.offset = upd["update_id"] + 1
                     self.handle(upd)
-            except Exception:
+            except Exception as exc:
                 log.exception("telegram loop")
+                self.error = str(exc)[:300]
                 time.sleep(5)
 
     def bot_for(self, chat_id: str, profile: dict | None = None, create: bool = False) -> Bot | None:
@@ -142,7 +146,10 @@ class Telegram:
         cmd = (text.split() or [""])[0].split("@")[0].lower()
         bot = self.bot_for(chat, msg.get("from"), create=cmd in ("/start", "/app"))
         if bot is None:
-            self.send(FULL if cmd in ("/start", "/app") else NO_ACCOUNT, chat_id=chat)
+            text = self.users.closed_reason(chat) if cmd in ("/start", "/app") else NO_ACCOUNT
+            if chat in self.users.blocked():
+                text = self.users.closed_reason(chat)
+            self.send(text, chat_id=chat)
             return
         reply = self.on_command(text, bot, chat)
         if reply:

@@ -16,4 +16,8 @@ COPY --from=miniapp /web ./tradetrust/bot/web
 
 ENV PYTHONUNBUFFERED=1 DB_PATH=/data/bot.db
 VOLUME /data
+# версия для админки: коммит и время сборки (передаёт GitHub Actions)
+ARG VERSION=dev
+ARG BUILT_AT=
+ENV APP_VERSION=$VERSION APP_BUILT_AT=$BUILT_AT
 CMD ["python", "-m", "tradetrust.bot"]

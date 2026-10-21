@@ -17,6 +17,9 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 
+# связь с биржей для админки: когда был последний удачный запрос и последняя ошибка
+HEALTH: dict = {"ok_at": None, "error_at": None, "error": ""}
+
 ENDPOINTS = {
     "mainnet": "https://api.bybit.com",
     "demo": "https://api-demo.bybit.com",
@@ -97,11 +100,18 @@ class BybitClient:
                 "X-BAPI-RECV-WINDOW": self.recv_window,
                 "X-BAPI-SIGN": self.sign(ts, payload),
             })
-        resp = self.http.request(method, url, data=body, headers=headers, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
+        try:
+            resp = self.http.request(method, url, data=body, headers=headers, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            HEALTH.update(error_at=time.time(), error=f"{path}: {exc}"[:300])
+            raise
         if data.get("retCode") != 0:
+            # ошибка в ответе (например, мало денег) — связь при этом есть
+            HEALTH["ok_at"] = time.time()
             raise BybitError(data.get("retCode"), data.get("retMsg", ""), path)
+        HEALTH["ok_at"] = time.time()
         return data.get("result") or {}
 
     def sync_time(self) -> None:

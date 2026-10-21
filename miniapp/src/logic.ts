@@ -304,3 +304,28 @@ export function feedState(delays: number[], lastTradeAt: number | null, now: num
   const sec = Math.max(0, median) / 1000;
   return { kind: "live", text: `задержка ${sec < 0.1 ? "<0,1" : sec.toFixed(1).replace(".", ",")} с` };
 }
+
+/** «только что», «5 мин назад», «3 ч назад», «2 дн назад» — для админки. */
+export function ago(sec: number | null | undefined, now: number): string {
+  if (sec == null) return "—";
+  const d = Math.max(0, now - sec);
+  if (d < 60) return "только что";
+  if (d < 3600) return `${Math.floor(d / 60)} мин назад`;
+  if (d < 86400) return `${Math.floor(d / 3600)} ч назад`;
+  return `${Math.floor(d / 86400)} дн назад`;
+}
+
+/** Сколько работает: «3 мин», «5 ч 12 мин», «2 дн 4 ч». */
+export function duration(sec: number): string {
+  const m = Math.floor(sec / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  if (d) return `${d} дн ${h % 24} ч`;
+  if (h) return `${h} ч ${m % 60} мин`;
+  return `${m} мин`;
+}
+
+/** Поиск по имени, @username и Telegram ID. */
+export function filterUsers<T extends { id: string; name: string; username: string }>(rows: T[], query: string): T[] {
+  const q = query.trim().toLowerCase().replace(/^@/, "");
+  if (!q) return rows;
+  return rows.filter((r) => r.name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q) || r.id.includes(q));
+}

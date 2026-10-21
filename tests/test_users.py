@@ -138,3 +138,137 @@ def test_one_broken_account_does_not_stop_others(env):
     a.reconcile = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
     tick([a, b], candle_closed=True)
     assert b.store.position("SOL") is not None
+
+
+# --- админка владельца ---------------------------------------------------------
+
+@pytest.fixture
+def admin_env(env):
+    owner, users, chats, joined, market = env
+    users.admin_store = owner.store
+    return owner, users, chats, market
+
+
+def call(server, path, user_id=42, body=None):
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    req = urllib.request.Request(base + path, headers={"Authorization": "tma " + init_data(user_id=user_id)},
+                                 data=None if body is None else json.dumps(body).encode(), method="GET" if body is None else "POST")
+    return json.loads(urllib.request.urlopen(req).read())
+
+
+def test_admin_is_owner_only_and_shows_users_and_system(admin_env):
+    owner, users, _, _ = admin_env
+    users.get(7, {"first_name": "Ann", "username": "ann"}, create=True)
+    server = api.serve(owner, "", 0, tg_token="123:ABC", owner_id="42", users=users)
+    try:
+        assert call(server, "/api/status")["admin"] is True
+        assert call(server, "/api/status", 7)["admin"] is False
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/admin", 7)
+        assert e.value.code == 403
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/admin/broadcast", 7, {"text": "hi"})
+        assert e.value.code == 403
+        data = call(server, "/api/admin")
+        row = data["users"][0]
+        assert (row["id"], row["name"], row["username"]) == ("7", "Ann", "ann")
+        assert row["equity"] == pytest.approx(1000) and row["joined_at"] and row["last_seen"]
+        assert data["stats"]["total"] == 1 and data["stats"]["new_day"] == 1 and data["stats"]["signups"][-1]["count"] == 1
+        assert data["settings"] == {"registration_open": True, "notify_new_users": False, "max_users": 2,
+                                    "demo_start_usdt": 1000.0}
+        sys = data["system"]
+        assert {"version", "started_at", "last_scan", "next_scan", "bybit", "memory", "disk", "errors"} <= set(sys)
+    finally:
+        server.shutdown()
+
+
+def test_admin_settings_close_registration_and_change_start_sum(admin_env):
+    owner, users, chats, _ = admin_env
+    server = api.serve(owner, "", 0, tg_token="123:ABC", owner_id="42", users=users)
+    try:
+        call(server, "/api/admin/settings", body={"registration_open": False})
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/status", 7)
+        assert e.value.code == 403 and "Регистрация" in json.loads(e.value.read())["error"]
+        call(server, "/api/admin/settings", body={"registration_open": True, "demo_start_usdt": 5000})
+        assert call(server, "/api/status", 7)["equity"]["total"] == pytest.approx(5000)
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/admin/settings", body={"max_users": 0})
+        assert e.value.code == 400
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/admin/settings", body={"api_key": "x"})
+        assert e.value.code == 400
+    finally:
+        server.shutdown()
+
+
+def test_admin_block_reset_delete(admin_env):
+    owner, users, chats, _ = admin_env
+    ann = short_params(users.get(7, {"first_name": "Ann"}, create=True))
+    ann.on_candle_close()
+    assert ann.store.position("SOL") is not None
+    server = api.serve(owner, "", 0, tg_token="123:ABC", owner_id="42", users=users)
+    try:
+        call(server, "/api/admin/users/7/block", body={})
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/status", 7)
+        assert e.value.code == 403 and "закрыт" in json.loads(e.value.read())["error"]
+        assert call(server, "/api/admin")["users"][0]["blocked"] is True
+        call(server, "/api/admin/users/7/unblock", body={})
+        assert call(server, "/api/status", 7)["paused"] is None
+
+        call(server, "/api/admin/users/7/reset", body={})
+        fresh = users.get(7)
+        assert fresh is not ann and fresh.store.position("SOL") is None
+        assert fresh.equity()["total"] == pytest.approx(1000) and fresh.store.get("profile")["name"] == "Ann"
+        assert chats["7"].sent[-1][0].startswith("🔄 Демо-счёт сброшен")
+
+        call(server, "/api/admin/users/7/delete", body={})
+        assert users.get(7) is None and not (users.dir / "7.db").exists()
+        with pytest.raises(HTTPError) as e:
+            call(server, "/api/admin/users/7/reset", body={})
+        assert e.value.code == 404
+    finally:
+        server.shutdown()
+
+
+def test_broadcast_skips_blocked_and_daily_line_replaces_new_user_messages(admin_env):
+    owner, users, chats, _ = admin_env
+    users.get(7, create=True)
+    users.get(8, create=True)
+    users.set_blocked("8", True)
+    import time
+    assert users.broadcast("Обновление!", sleep=0) == 1
+    for _ in range(50):
+        if any("Обновление" in t for t, _ in chats["7"].sent):
+            break
+        time.sleep(0.02)
+    assert any(t == "📣 Обновление!" for t, _ in chats["7"].sent)
+    assert not any("Обновление" in t for t, _ in chats["8"].sent)
+    with pytest.raises(ValueError):
+        users.broadcast("   ")
+    owner.report_extras.append(users.daily_line)
+    assert "Демо-счетов: 2 (+2 за сутки)" in owner.daily_report_text()
+
+
+def test_error_log_and_bybit_health():
+    import logging
+    from tradetrust.bot import admin, bybit
+    from test_bot import CaptureSession
+    log = logging.getLogger("tradetrust.test")
+    log.addHandler(admin.ERRORS)
+    try:
+        log.error("биржа не ответила")
+    finally:
+        log.removeHandler(admin.ERRORS)
+    assert admin.ERRORS.recent()[0]["text"] == "биржа не ответила"
+    from tradetrust.bot.bybit import BybitClient
+    BybitClient("mainnet", session=CaptureSession({"list": [{"lastPrice": "1"}]})).last_price("SOLUSDT")
+    assert bybit.HEALTH["ok_at"] is not None
+
+    class Down:
+        def request(self, *a, **k):
+            raise ConnectionError("нет сети")
+    with pytest.raises(ConnectionError):
+        BybitClient("mainnet", session=Down()).last_price("SOLUSDT")
+    assert "нет сети" in bybit.HEALTH["error"] and bybit.HEALTH["error_at"] >= bybit.HEALTH["ok_at"]
