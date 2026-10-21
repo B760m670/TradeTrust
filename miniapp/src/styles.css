@@ -828,7 +828,21 @@ h3.section-title { margin: 22px 0 10px; }
 .chart-switches button { height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; background: transparent;
   color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
 .chart-switches button.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
-.chart-area { height: 230px; }
-.chart-card.tall .chart-area { height: 380px; }
+.chart-card { --chart-h: 230px; }
+.chart-card.tall { --chart-h: 380px; }
+.chart-area { height: var(--chart-h); }
 .live-badge.slow { background: var(--amber-soft); color: var(--amber); }
 .app.narrow .chart-card .legend-tf { display: none; } /* на телефоне подпись не нужна, место — графику */
+
+/* Индикаторы, как в ряду под графиком у Bybit: основные (один поверх свечей) | окна под графиком */
+.ind-row { display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; margin: -4px 0 0; }
+.ind-row::-webkit-scrollbar { display: none; }
+.ind-row button { flex-shrink: 0; height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; cursor: pointer; }
+.ind-row button:hover { color: var(--text); }
+.ind-row button.on { color: var(--accent); background: var(--accent-soft); }
+.ind-sep { flex-shrink: 0; width: 1px; height: 14px; margin: 0 4px; background: var(--border); }
+.ind-legend { position: absolute; left: 8px; right: 64px; z-index: 1; display: flex; flex-wrap: wrap; gap: 0 8px;
+  font-size: 10px; line-height: 14px; pointer-events: none; }
+.ind-legend .ind-title { color: var(--muted); }
+.chart-wrap .zoom { top: auto; bottom: 34px; }
