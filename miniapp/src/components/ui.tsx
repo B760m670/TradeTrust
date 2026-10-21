@@ -93,6 +93,27 @@ export function Segmented<T extends string>({ options, value, onChange, disabled
   );
 }
 
+/** Вкладки с подчёркиванием, как у бирж: под графиком, в «Активах». */
+export function Tabs<T extends string>({ options, value, onChange, label }: {
+  options: [T, string][]; value: T; onChange: (v: T) => void; label: string;
+}) {
+  return (
+    <div className="tabs" role="tablist" aria-label={label}>
+      {options.map(([key, text]) => (
+        <button key={key} role="tab" aria-selected={key === value} className={key === value ? "on" : undefined}
+          onClick={() => { if (key !== value) { haptic(); onChange(key); } }}>
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Метка счёта на каждом экране: «ДЕМО» синяя, «РЕАЛЬНЫЙ» оранжевая. */
+export function AccountBadge({ real }: { real: boolean }) {
+  return <span className={`acc-badge ${real ? "real" : "demo"}`}>{real ? "РЕАЛЬНЫЙ" : "ДЕМО"}</span>;
+}
+
 export function CoinAvatar({ coin, tone = "accent", size = 40 }: { coin: string; tone?: ChipTone; size?: number }) {
   return (
     <span className={`avatar chip-${tone}`} aria-hidden="true" style={{ width: size, height: size, fontSize: size * 0.28 }}>

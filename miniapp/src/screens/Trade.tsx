@@ -4,8 +4,8 @@ import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon } from "../components/icons";
 import { Sheet } from "../components/Sheet";
-import { Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Segmented, Tile, Value } from "../components/ui";
-import { chartPrice, dateTime, pct, price, tone, usd } from "../format";
+import { AccountBadge, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Segmented, Tabs, Tile, Value } from "../components/ui";
+import { chartPrice, compact, dateTime, pct, price, tone, usd } from "../format";
 import { useLiveTickers } from "../live";
 import { coinState, emaGap, entryPlan } from "../logic";
 import { confirmAction, haptic } from "../telegram";
@@ -49,29 +49,39 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           <span className="pair-name"><strong>{coin}</strong><span className="muted">/USDT</span></span>
           <ChevronIcon size={18} />
         </button>
-        <Chip tone={s.env === "mainnet" ? "down" : "muted"}>Спот</Chip>{/* красный — реальный счёт */}
-        <div className="row-end">
-          <Flash value={now} className="coin-price num">{now == null ? "—" : chartPrice(now)}</Flash>
-          <span className={`small num tone-${ticker ? tone(ticker.change24h) : "neutral"}`}>
-            {ticker ? `${pct(ticker.change24h, true)} за 24 ч` : "—"}
+        <span className="spot-tag">СПОТ</span>
+        <span className="grow" />
+        <AccountBadge real={s.env === "mainnet"} />
+      </header>
+
+      <section className="price-block">
+        <div className="price-main">
+          <Flash value={now} className={`coin-price num tone-${ticker ? tone(ticker.change24h) : "neutral"}`}>{now == null ? "—" : chartPrice(now)}</Flash>
+          <span className={`small num bold tone-${ticker ? tone(ticker.change24h) : "neutral"}`}>
+            {ticker ? `${ticker.change24h >= 0 ? "▲" : "▼"} ${pct(ticker.change24h, true)} за 24 ч` : "—"}
           </span>
           <LiveBadge on={!!ticker} />
         </div>
-      </header>
+        <dl className="day-stats">
+          <dt>Макс 24ч</dt><dd className="num">{ticker?.high24h ? chartPrice(ticker.high24h) : "—"}</dd>
+          <dt>Мин 24ч</dt><dd className="num">{ticker?.low24h ? chartPrice(ticker.low24h) : "—"}</dd>
+          <dt>Оборот</dt><dd className="num">{ticker?.turnover24h ? compact(ticker.turnover24h) : "—"}</dd>
+        </dl>
+      </section>
 
       <div className="coin-grid">
         <ChartCard coin={coin} status={s} tall={wide} className="coin-chart" />
 
         <div className="coin-side">
-          <Segmented label="Панель" options={PANELS} value={panel} onChange={setPanel} />
+          <Tabs label="Панель" options={PANELS} value={panel} onChange={setPanel} />
           {panel === "position" && <BotPosition coin={coin} status={s} busy={busy} act={act} />}
           {panel === "orders" && <MyTrades coin={coin} status={s} ownQty={ownQty} price={now} />}
           {panel === "bot" && <Indicators coin={coin} status={s} />}
-          {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} />}
+          {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} />}
         </div>
       </div>
 
-      {!wide && <div className="trade-bar"><OrderButtons onSide={setSide} canSell={ownQty > 0} /></div>}
+      {!wide && <div className="trade-bar"><OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} /></div>}
 
       {side && now != null && (
         <OrderSheet coin={coin} side={side} price={now} usdtFree={usdtFree} ownQty={ownQty} busy={busy}
@@ -94,12 +104,13 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
   );
 }
 
-function OrderButtons({ onSide, canSell }: { onSide: (s: Side) => void; canSell: boolean }) {
+function OrderButtons({ onSide, canSell, price: px }: { onSide: (s: Side) => void; canSell: boolean; price?: number }) {
+  const sub = px == null ? "по рынку" : `по рынку · ${chartPrice(px)}`;
   return (
     <div className="order-buttons">
-      <Button variant="up" onClick={() => { haptic(); onSide("buy"); }}>Купить</Button>
+      <Button variant="up" onClick={() => { haptic(); onSide("buy"); }}><span>Купить</span><small>{sub}</small></Button>
       <Button variant="danger" disabled={!canSell} title={canSell ? undefined : "Своих монет нет — продавать нечего"}
-        onClick={() => { haptic(); onSide("sell"); }}>Продать</Button>
+        onClick={() => { haptic(); onSide("sell"); }}><span>Продать</span><small>{canSell ? sub : "своих монет нет"}</small></Button>
     </div>
   );
 }
@@ -198,11 +209,17 @@ function OrderSheet({ coin, side, price: px, usdtFree, ownQty, busy, onSide, onC
   const valid = Number.isFinite(usdt) && usdt > 0 && usdt <= max + 1e-9;
   return (
     <Sheet title={`${coin}/USDT · по рынку`} onClose={onClose}>
-      <Segmented label="Сторона" options={[["buy", "Купить"], ["sell", "Продать"]]} value={side}
-        onChange={(v) => { setText(""); onSide(v as Side); }} />
+      <div className={`side-seg ${side}`}>
+        <Segmented label="Сторона" options={[["buy", "Купить"], ["sell", "Продать"]]} value={side}
+          onChange={(v) => { setText(""); onSide(v as Side); }} />
+      </div>
+      <div className="order-type"><strong>Рыночный</strong><span className="faint">исполнится сразу по лучшей цене</span></div>
       <label className="order-field">
-        <span className="muted small">Сумма, USDT</span>
-        <input inputMode="decimal" placeholder="0" value={text} onChange={(e) => setText(e.target.value)} aria-label="Сумма в USDT" />
+        <span className="faint small">Сумма</span>
+        <span className="order-input">
+          <input inputMode="decimal" placeholder="0,00" value={text} onChange={(e) => setText(e.target.value)} aria-label="Сумма в USDT" />
+          <span className="unit">USDT</span>
+        </span>
       </label>
       <div className="order-parts">
         {PARTS.map((p) => (

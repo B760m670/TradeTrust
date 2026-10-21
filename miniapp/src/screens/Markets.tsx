@@ -44,7 +44,7 @@ export function Markets({ status: s, onOpenCoin }: { status: Status; onOpenCoin:
 
       <Card className="table-card">
         <div className="sig-row sig-head" aria-hidden="true">
-          <span>Монета</span><span>Цена</span><span className="col-wide">24 ч</span>
+          <span>Пара</span><span className="col-price">Цена</span><span className="col-day">24 ч</span>
           <span className="col-wide">EMA {s.settings.ema_fast}/{s.settings.ema_slow}</span>
           <span className="col-wide">ATR</span><span>Сигнал бота</span>
         </div>
@@ -61,11 +61,10 @@ export function Markets({ status: s, onOpenCoin }: { status: Status; onOpenCoin:
                   {gap != null && <span className={`small tone-${tone(gap)} narrow-only`}>EMA {pct(gap, true)}</span>}
                 </span>
               </span>
-              <span className="sig-price">
+              <span className="sig-price col-price">
                 <Flash value={signal.price} className="num">{signal.error ? "ошибка" : price(signal.price)}</Flash>
-                {day != null && <span className={`small num tone-${tone(day)} narrow-only`}>{pct(day, true)} за 24 ч</span>}
               </span>
-              <span className={`num col-wide tone-${day == null ? "neutral" : tone(day)}`}>{day == null ? "—" : pct(day, true)}</span>
+              <span className={`num col-day tone-${day == null ? "neutral" : tone(day)}`}>{day == null ? "—" : `${day >= 0 ? "▲" : "▼"} ${pct(day, true)}`}</span>
               <span className={`num col-wide tone-${gap == null ? "neutral" : tone(gap)}`}>{gap == null ? "—" : pct(gap, true)}</span>
               <span className="num col-wide muted">{atrPct == null ? "—" : pct(atrPct)}</span>
               <span className="sig-state"><Chip tone={state.tone}>{state.label}</Chip></span>

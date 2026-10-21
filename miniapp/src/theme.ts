@@ -8,7 +8,7 @@ export type Theme = "light" | "dark";
 export const THEME_OPTIONS: [ThemePref, string][] = [["auto", "Авто"], ["light", "Светлая"], ["dark", "Тёмная"]];
 
 const KEY = "theme";
-const BACKGROUND: Record<Theme, string> = { dark: "#07080D", light: "#F3F3F7" };
+const BACKGROUND: Record<Theme, string> = { dark: "#08090C", light: "#F3F4F7" };
 
 const isPref = (v: unknown): v is ThemePref => v === "auto" || v === "light" || v === "dark";
 

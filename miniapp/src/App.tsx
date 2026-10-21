@@ -72,7 +72,6 @@ function BottomNav({ tab, onTab, inCoin, status }: { tab: Tab; onTab: (t: Tab) =
   return (
     <nav className={`bottom-nav${tabs.length > 5 ? " six" : ""}`} aria-label="Разделы"
       style={{ "--i": index, "--n": tabs.length } as CSSProperties}>
-      {!inCoin && <span className="bottom-thumb" aria-hidden="true" />}
       {tabs.map((t) => (
         <button key={t.id} className={!inCoin && tab === t.id ? "on" : undefined}
           aria-current={!inCoin && tab === t.id ? "page" : undefined} onClick={() => onTab(t.id)}>

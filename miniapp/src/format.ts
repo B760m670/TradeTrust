@@ -45,3 +45,12 @@ export function clock(sec: number): string {
 export type Tone = "up" | "down" | "neutral";
 
 export const tone = (x: number): Tone => (x > 0 ? "up" : x < 0 ? "down" : "neutral");
+
+/** Крупные суммы коротко: 412 млн, 1,9 млрд. */
+export function compact(x: number): string {
+  const f = (v: number) => v.toLocaleString("ru-RU", { maximumFractionDigits: v >= 100 ? 0 : 1 });
+  if (x >= 1e9) return `${f(x / 1e9)} млрд`;
+  if (x >= 1e6) return `${f(x / 1e6)} млн`;
+  if (x >= 1e3) return `${f(x / 1e3)} тыс`;
+  return f(x);
+}

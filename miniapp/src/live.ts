@@ -5,6 +5,9 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 export interface Ticker {
   price: number;
   change24h: number; // в процентах
+  high24h?: number;
+  low24h?: number;
+  turnover24h?: number; // оборот за сутки в USDT
 }
 
 export interface LiveCandle {
@@ -130,7 +133,9 @@ export function useTickers(coins: string[]): Record<string, Ticker> {
       feed.subscribe(`tickers.${coin}USDT`, (d) => {
         const price = num(d.lastPrice);
         if (!Number.isFinite(price) || price <= 0) return;
-        buffer.current[coin] = { price, change24h: num(d.price24hPcnt) * 100 };
+        const opt = (v: unknown) => (Number.isFinite(num(v)) ? num(v) : undefined);
+        buffer.current[coin] = { price, change24h: num(d.price24hPcnt) * 100, high24h: opt(d.highPrice24h),
+          low24h: opt(d.lowPrice24h), turnover24h: opt(d.turnover24h) };
         dirty = true;
       }));
     const timer = setInterval(() => {

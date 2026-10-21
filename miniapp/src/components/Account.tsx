@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api, type AccountInfo, type Status } from "../api";
 import { confirmAction, haptic } from "../telegram";
+import { AccountBadge } from "./ui";
 import type { Act } from "./BotControls";
 import { EnvChip } from "./BotControls";
 import { CheckIcon, ChevronIcon } from "./icons";
@@ -31,13 +32,59 @@ export async function switchAccount(s: Status, a: AccountInfo, act: Act): Promis
   return true;
 }
 
+/** Переключатель «ДЕМО | РЕАЛЬНЫЙ» в шапке, как у бирж. На реальный — через окно с предупреждением. */
+export function AccountSegment({ status: s, busy, act }: { status: Status; busy: boolean; act: Act }) {
+  const [open, setOpen] = useState(false);
+  const acc = s.accounts;
+  const main = acc?.list.find((a) => a.id === "main");
+  if (!acc || !main || main.real) return <AccountBadge real={s.env === "mainnet"} />;
+  const isReal = acc.active === "real";
+  return (
+    <>
+      <div className="acc-seg" role="radiogroup" aria-label="Счёт">
+        <button role="radio" aria-checked={!isReal} className={isReal ? undefined : "on demo"} disabled={busy}
+          onClick={() => { if (isReal) { haptic(); void act(() => api.switchAccount("main")); } }}>ДЕМО</button>
+        <button role="radio" aria-checked={isReal} className={isReal ? "on real" : undefined} disabled={busy}
+          onClick={() => { if (!isReal) { haptic(); setOpen(true); } }}>РЕАЛЬНЫЙ</button>
+      </div>
+      {open && <AccountSheet status={s} act={act} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Окно счёта: оба счёта, предупреждение и явная кнопка перехода на реальный. */
 export function AccountSheet({ status: s, act, onClose }: { status: Status; act: Act; onClose: () => void }) {
-  const pick = async (a: AccountInfo) => {
-    if (a.id === s.accounts?.active || (await switchAccount(s, a, act))) onClose();
+  const acc = s.accounts!;
+  const real = acc.list.find((a) => a.real);
+  const toMain = () => {
+    onClose();
+    if (acc.active !== "main") void act(() => api.switchAccount("main"));
   };
   return (
     <Sheet title="Счёт" onClose={onClose}>
-      <AccountList status={s} onPick={(a) => void pick(a)} />
+      <div className="account-list">
+        {acc.list.map((a) => (
+          <button key={a.id} className={`acc-opt${a.real ? " real" : " demo"}${(real ? a.real : a.id === acc.active) ? " on" : ""}`}
+            onClick={() => (a.real ? undefined : toMain())}>
+            <span className="account-dot" aria-hidden="true" />
+            <span className="row-main">
+              <strong>{a.label}</strong>
+              <span className="muted small">{a.real ? "настоящие деньги · ключ только спот" : "виртуальные деньги по настоящим ценам"}</span>
+            </span>
+            {a.id === acc.active && <CheckIcon size={18} />}
+          </button>
+        ))}
+      </div>
+      {real ? (
+        <>
+          <div className="acc-warn">
+            <strong>Переход на реальный счёт</strong>
+            <span>Сделки здесь — настоящие деньги. Бот на этом счёте выключен, пока вы не зададите его капитал и не включите его.</span>
+          </div>
+          <button className="btn btn-real" onClick={() => { onClose(); void act(() => api.switchAccount(real.id)); }}>Перейти на реальный</button>
+          <button className="btn" onClick={onClose}>Остаться в демо</button>
+        </>
+      ) : <RealHint error={acc.real_error} />}
     </Sheet>
   );
 }
