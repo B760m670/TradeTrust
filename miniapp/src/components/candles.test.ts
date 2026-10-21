@@ -30,17 +30,18 @@ describe("candles", () => {
   });
 });
 
-import { addPoint, perSecond } from "./seconds";
+import { addPrice, priceChanges } from "./seconds";
 
-describe("1s line", () => {
-  it("keeps the last trade of every second", () => {
-    expect(perSecond([{ t: 2_500, p: 3 }, { t: 1_100, p: 1 }, { t: 1_900, p: 2 }])).toEqual([{ time: 1, value: 2 }, { time: 2, value: 3 }]);
+describe("tick line", () => {
+  it("adds a point only when the price changes", () => {
+    expect(priceChanges([{ t: 1000, p: 5 }, { t: 1500, p: 5 }, { t: 2500, p: 6 }, { t: 2600, p: 5 }]))
+      .toEqual([{ time: 1, value: 5 }, { time: 2.5, value: 6 }, { time: 2.6, value: 5 }]);
   });
-  it("adds a point per second and replaces within the same second", () => {
-    const a = addPoint([], { time: 10, value: 1 });
-    const b = addPoint(a, { time: 10, value: 2 });
-    expect(b).toEqual([{ time: 10, value: 2 }]);
-    expect(addPoint(b, { time: 11, value: 3 })).toHaveLength(2);
-    expect(addPoint(b, { time: 9, value: 5 })).toBe(b);
+  it("keeps time increasing and adds a flat step when asked", () => {
+    const a = addPrice([], 10, 1);
+    const b = addPrice(a, 10, 2);
+    expect(b[1].time).toBeGreaterThan(10);
+    expect(addPrice(b, 30, 2)).toBe(b);
+    expect(addPrice(b, 30, 2, true)).toHaveLength(3);
   });
 });

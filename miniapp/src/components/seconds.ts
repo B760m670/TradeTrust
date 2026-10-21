@@ -1,31 +1,35 @@
-// Секундная линия, как «1с» у Bybit: точка каждую секунду по последней сделке на рынке.
-// Начало — последние сделки с сервера бота, дальше — поток сделок Bybit. Линия хранится,
-// пока открыто приложение, поэтому при возврате на экран она продолжается, а не рисуется заново.
+// Тиковая линия, как «1с» у Bybit: линию двигает изменение цены, а не время. Каждая новая цена сделки —
+// новая точка (шаг вперёд и наклон вверх или вниз); если цена 10 секунд не менялась — ровный шаг вперёд.
+// Начало — последние сделки с сервера бота, дальше — поток сделок Bybit. Линия хранится, пока открыто
+// приложение, поэтому при возврате на экран она продолжается, а не рисуется заново.
 import { useContext, useEffect, useState } from "react";
 import { api } from "../api";
 import { LiveContext, num } from "../live";
 
 export interface Point {
-  time: number; // секунды
+  time: number; // секунды, с долями — время сделки
   value: number;
 }
 
-const MAX_POINTS = 1800; // полчаса
+const MAX_POINTS = 1500;
+export const IDLE_STEP = 10; // секунд без изменения цены — ровный шаг вперёд
+const FLUSH_MS = 250; // экрану хватает четырёх обновлений в секунду
 const lines = new Map<string, Point[]>();
 
-/** Последняя цена каждой секунды из списка сделок (время в мс), по возрастанию. */
-export function perSecond(trades: { t: number; p: number }[]): Point[] {
-  const bySec = new Map<number, number>();
-  for (const tr of [...trades].sort((a, b) => a.t - b.t)) bySec.set(Math.floor(tr.t / 1000), tr.p);
-  return [...bySec].map(([time, value]) => ({ time, value }));
+/** Добавить цену: точка только если цена изменилась (или same — ровный шаг). Время всегда растёт. */
+export function addPrice(points: Point[], timeSec: number, value: number, same = false): Point[] {
+  const last = points[points.length - 1];
+  if (last && value === last.value && !same) return points;
+  const time = last && timeSec <= last.time ? last.time + 0.001 : timeSec; // несколько сделок в одну миллисекунду
+  const next = [...points, { time, value }];
+  return next.length > MAX_POINTS ? next.slice(next.length - MAX_POINTS) : next;
 }
 
-/** Добавить точку секунды: новая секунда — новая точка, та же — заменить. Старее последней — не трогаем. */
-export function addPoint(points: Point[], p: Point): Point[] {
-  const last = points[points.length - 1];
-  if (last && p.time < last.time) return points;
-  const next = last && last.time === p.time ? [...points.slice(0, -1), p] : [...points, p];
-  return next.length > MAX_POINTS ? next.slice(next.length - MAX_POINTS) : next;
+/** Точки изменений цены из списка сделок (время в мс). */
+export function priceChanges(trades: { t: number; p: number }[]): Point[] {
+  let out: Point[] = [];
+  for (const tr of [...trades].sort((a, b) => a.t - b.t)) out = addPrice(out, tr.t / 1000, tr.p);
+  return out;
 }
 
 export function useSecondLine(coin: string): Point[] {
@@ -33,31 +37,40 @@ export function useSecondLine(coin: string): Point[] {
   const [points, setPoints] = useState<Point[]>(() => lines.get(coin) ?? []);
 
   useEffect(() => {
-    if (!coin) return; // секундная линия выключена
-    let alive = true;
+    if (!coin) return; // линия выключена
+    let alive = true, dirty = false;
     setPoints(lines.get(coin) ?? []);
-    let price: number | null = lines.get(coin)?.at(-1)?.value ?? null;
+    const put = (timeSec: number, value: number, same = false) => {
+      const before = lines.get(coin) ?? [];
+      const after = addPrice(before, timeSec, value, same);
+      if (after !== before) { lines.set(coin, after); dirty = true; }
+    };
     if (!lines.get(coin)?.length) {
       api.trades(coin).then((d) => {
         if (!alive) return;
-        const seed = perSecond(d.trades);
+        const seed = priceChanges(d.trades);
         const now = lines.get(coin) ?? [];
         const first = now[0]?.time ?? Infinity;
         lines.set(coin, [...seed.filter((s) => s.time < first), ...now]);
-        price ??= seed.at(-1)?.value ?? null;
-        setPoints(lines.get(coin)!);
-      }, () => { /* без истории линия начнётся с текущей секунды */ });
+        dirty = true;
+      }, () => { /* без истории линия начнётся с первой сделки */ });
     }
     const offs = feed ? [
-      feed.subscribe(`publicTrade.${coin}USDT`, (d) => { const p = num(d.p); if (p > 0) price = p; }),
-      feed.subscribe(`tickers.${coin}USDT`, (d) => { const p = num(d.lastPrice); if (p > 0 && price == null) price = p; }),
+      feed.subscribe(`publicTrade.${coin}USDT`, (d) => {
+        const p = num(d.p), t = num(d.T);
+        if (p > 0) put(Number.isFinite(t) && t > 0 ? t / 1000 : Date.now() / 1000, p);
+      }),
+      feed.subscribe(`tickers.${coin}USDT`, (d) => {
+        const p = num(d.lastPrice);
+        if (p > 0 && !lines.get(coin)?.length) put(Date.now() / 1000, p);
+      }),
     ] : [];
     const timer = setInterval(() => {
-      if (price == null) return;
-      const next = addPoint(lines.get(coin) ?? [], { time: Math.floor(Date.now() / 1000), value: price });
-      lines.set(coin, next);
-      setPoints(next);
-    }, 1000);
+      const last = lines.get(coin)?.at(-1);
+      const now = Date.now() / 1000;
+      if (last && now - last.time >= IDLE_STEP) put(now, last.value, true);
+      if (dirty) { dirty = false; setPoints(lines.get(coin) ?? []); }
+    }, FLUSH_MS);
     return () => {
       alive = false;
       clearInterval(timer);

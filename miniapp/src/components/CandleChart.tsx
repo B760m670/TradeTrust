@@ -198,7 +198,8 @@ export function SecondChart({ points }: { points: Point[] }) {
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       crosshair: { vertLine: { color: colors.up, labelBackgroundColor: colors.up }, horzLine: { color: colors.up, labelBackgroundColor: colors.up } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.3, bottom: 0.3 } },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, tickMarkFormatter: tickMark, rightOffset: 12 },
+      // шаг линии — одинаковый на каждое изменение цены, как у Bybit
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, tickMarkFormatter: tickMark, rightOffset: 8, barSpacing: 9 },
       localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p, refPrice.current ?? p), timeFormatter: crosshairTime(true, true) },
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
@@ -218,11 +219,12 @@ export function SecondChart({ points }: { points: Point[] }) {
     if (!s || !chart || !points.length) return;
     const prev = shown.current;
     const last = points[points.length - 1];
-    if (prev.length && prev[0].time === points[0].time && points.length - prev.length <= 1 && points.length >= prev.length) {
-      s.update({ time: ts(last.time), value: last.value });
+    if (prev.length && prev[0].time === points[0].time && points.length >= prev.length) {
+      // новые цены — по одной, как приходили: линия делает шаг на каждую
+      for (const p of points.slice(Math.max(prev.length - 1, 0))) s.update({ time: ts(p.time), value: p.value });
     } else {
       s.setData(points.map((p) => ({ time: ts(p.time), value: p.value })));
-      if (!prev.length) chart.timeScale().setVisibleLogicalRange({ from: points.length - 120, to: points.length + 12 });
+      if (!prev.length) chart.timeScale().scrollToRealTime();
     }
     shown.current = points;
     refPrice.current = last.value;
