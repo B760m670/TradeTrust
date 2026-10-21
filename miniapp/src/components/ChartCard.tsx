@@ -72,7 +72,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
         {emas && <span><i style={{ background: colors.fast }} />EMA {set.ema_fast}</span>}
         {emas && <span><i style={{ background: colors.slow }} />EMA {set.ema_slow}</span>}
         {pos && !seconds && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп бота</span>}
-        <span className="legend-tf">{seconds ? "сделки Bybit каждую секунду" : "спот Bybit · бот решает по 4ч"} · время {ZONE}</span>
+        <span className="legend-tf">{seconds ? "каждая новая цена сделки Bybit — шаг линии" : "спот Bybit · бот решает по 4ч"} · время {ZONE}</span>
       </div>
     </Card>
   );
