@@ -239,6 +239,8 @@ export const api = {
   portfolio: () => request<Portfolio>("/api/portfolio"),
   chart: (coin: string, interval = "4h", end?: number) =>
     request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}${end ? `&end=${end}` : ""}`),
+  trades: (coin: string) =>
+    request<{ coin: string; trades: { t: number; p: number; v: number }[] }>(`/api/trades?coin=${encodeURIComponent(coin)}`),
   confirm: (id: string) => request<Message>(`/api/proposals/${id}/confirm`, "POST"),
   reject: (id: string) => request<Message>(`/api/proposals/${id}/reject`, "POST"),
   setMode: (mode: Mode) => request<Message>("/api/mode", "POST", { mode }),

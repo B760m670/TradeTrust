@@ -57,13 +57,15 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     client.sync_time()
     notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id, cfg.webapp_url) if cfg.telegram_token else None
     bot = Bot(cfg, exchange, store, notifier)
+    # публичные данные основного рынка, общие для всех: графики владельца и цены демо-счетов пользователей
+    market = CachedMarket(BybitExchange(BybitClient("mainnet", base_url=cfg.base_url or None)))
+    if cfg.env != "mainnet":
+        bot.market = market
     accounts = Accounts(bot, *connect_real(cfg, notifier))
     users = None
     if notifier:
         # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых
         # открывает PUBLIC_DEMO, дальше — переключатель в админке
-        market = CachedMarket(BybitExchange(BybitClient("mainnet", base_url=cfg.base_url or None)))
-
         def new_user(user_bot: Bot, total: int) -> None:
             if not users.settings()["notify_new_users"]:
                 return  # по умолчанию — только строкой в ежедневной сводке и в админке

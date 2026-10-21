@@ -952,3 +952,13 @@ def test_chart_returns_volume_and_older_history_before_end(make_bot):
     older = bot.chart("SOL", "4h", end=cut * 1000)
     assert seen["end"] == cut * 1000
     assert older["time"] and older["time"][-1] < cut and older["time"][-1] == full["time"][-11]
+
+
+def test_chart_uses_main_market_data_not_the_account_exchange(make_bot):
+    # демо-счёт Bybit отдаёт свои свечи; график должен совпадать с живыми ценами основного рынка
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    market = FakeExchange()
+    market.set("SOL", trend_down_last_bar())
+    bot.market = market
+    assert bot.chart("SOL", "4h")["close"][-1] == pytest.approx(float(trend_down_last_bar()["close"].iloc[-1]))

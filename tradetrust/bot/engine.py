@@ -162,6 +162,9 @@ class Bot:
         self.params = bt.Params(fast=cfg.ema_fast, slow=cfg.ema_slow, atr_mult=cfg.atr_mult, risk=cfg.risk_pct / 100)
         self.defaults = self.settings()  # значения из .env — к ним возвращает «Сбросить»
         self.btc: dict | None = (self.store.get("last_scan") or {}).get("btc")  # биткоин к своей средней
+        # данные для графиков — всегда основной рынок Bybit: оттуда же идёт живой поток цен в приложении.
+        # У демо-счёта Bybit (api-demo) свои свечи, и с живыми ценами они не сходятся
+        self.market = None
         self.report_extras: list = []  # строки для ежедневной сводки от других частей (демо-счета — у владельца)
         saved = self.store.get("settings", {})
         try:
@@ -766,8 +769,8 @@ class Bot:
         end (мс) — более старая история: свечи, открытые до этого времени."""
         if interval not in CHART_INTERVALS:
             raise ValueError(f"interval: {', '.join(CHART_INTERVALS)}")
-        sym = self.symbol(coin)
-        df = self.ex.candles(sym, interval, 1000, end=end) if end else self.ex.candles(sym, interval, 1000)
+        sym, src = self.symbol(coin), self.market or self.ex
+        df = src.candles(sym, interval, 1000, end=end) if end else src.candles(sym, interval, 1000)
         if end:
             df = df[df.index < pd.Timestamp(end, unit="ms", tz="UTC")]
         data = bt.prepare(df, self.params).iloc[-bars:]
@@ -784,7 +787,7 @@ class Bot:
     def trades(self, coin: str) -> dict:
         """Последние сделки рынка — начало секундного графика, дальше он идёт по потоку биржи."""
         try:
-            trades = self.ex.recent_trades(self.symbol(coin))
+            trades = (self.market or self.ex).recent_trades(self.symbol(coin))
         except Exception as exc:  # без истории график просто начнётся с текущей секунды
             log.warning("recent trades %s: %s", coin, exc)
             trades = []

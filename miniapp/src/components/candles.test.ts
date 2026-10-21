@@ -29,3 +29,18 @@ describe("candles", () => {
     expect(e[3]).toBeCloseTo(3.125);
   });
 });
+
+import { addPoint, perSecond } from "./seconds";
+
+describe("1s line", () => {
+  it("keeps the last trade of every second", () => {
+    expect(perSecond([{ t: 2_500, p: 3 }, { t: 1_100, p: 1 }, { t: 1_900, p: 2 }])).toEqual([{ time: 1, value: 2 }, { time: 2, value: 3 }]);
+  });
+  it("adds a point per second and replaces within the same second", () => {
+    const a = addPoint([], { time: 10, value: 1 });
+    const b = addPoint(a, { time: 10, value: 2 });
+    expect(b).toEqual([{ time: 10, value: 2 }]);
+    expect(addPoint(b, { time: 11, value: 3 })).toHaveLength(2);
+    expect(addPoint(b, { time: 9, value: 5 })).toBe(b);
+  });
+});
