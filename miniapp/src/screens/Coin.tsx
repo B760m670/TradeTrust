@@ -86,6 +86,9 @@ export function Coin({ coin, status: s, busy, act, wide, onBack }: Props) {
                 <Tile label={`EMA ${set.ema_fast}`} value={price(sig.ema_fast)} />
                 <Tile label={`EMA ${set.ema_slow}`} value={price(sig.ema_slow)} />
                 <Tile label="Разрыв EMA" value={gap == null ? "—" : pct(gap, true)} tone={gap == null ? undefined : tone(gap)} />
+                <Tile label={`Рост за ${set.trend_days} дн`} value={sig.momentum == null ? "—" : pct(sig.momentum * 100, true)}
+                  tone={sig.momentum == null ? undefined : tone(sig.momentum)}
+                  hint={set.trend_filter ? (sig.trend_ok ? "проходит фильтр" : "не проходит фильтр") : "фильтр выключен"} />
                 <Tile label="ATR" value={sig.atr == null ? "—" : price(sig.atr)}
                   hint={sig.atr == null ? undefined : `${pct((sig.atr / sig.price) * 100)} от цены`} />
               </div>

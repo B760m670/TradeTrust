@@ -26,11 +26,13 @@ export function coinState(sig: Signal | undefined, held: boolean): CoinState {
   let kind: CoinKind;
   if (!sig || sig.error) kind = "none";
   else if (held) kind = "held";
-  else if (sig.cross_up && sig.regime_ok) kind = "entry";
+  else if (sig.cross_up && sig.regime_ok && sig.trend_ok !== false) kind = "entry";
   else if (sig.cross_up) kind = "filtered";
   else if (sig.trend_down) kind = "down";
   else kind = "up";
-  return { ...STATES[kind], kind, isEntry: kind === "entry" };
+  // вход есть, но его отсёк фильтр: долгосрочного роста нет или BTC ниже средней
+  const label = kind === "filtered" && sig?.trend_ok === false ? "Фильтр тренда" : STATES[kind].label;
+  return { ...STATES[kind], label, kind, isEntry: kind === "entry" };
 }
 
 export interface SignalRow {

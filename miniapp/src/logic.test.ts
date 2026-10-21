@@ -8,7 +8,8 @@ import {
 
 const editable: EditableSettings = {
   risk_pct: 1, max_positions: 5, max_position_pct: 25, max_total_risk_pct: 5, daily_loss_limit_pct: 3,
-  capital_usdt: 0, proposal_ttl_min: 60, report_hour_utc: 7, btc_filter: false, daily_report: true, coins: ["BTC", "ETH"],
+  capital_usdt: 0, proposal_ttl_min: 60, report_hour_utc: 7, btc_filter: false, daily_report: true,
+  trend_filter: true, trend_days: 120, coins: ["BTC", "ETH"],
 };
 const settings: Settings = { ...editable, atr_mult: 2, ema_fast: 20, ema_slow: 50 };
 const equity: Equity = { total: 1000, free: 1000, usdt: 1000, invested: 0, unrealized: 0 };
@@ -38,6 +39,9 @@ describe("coinState", () => {
     expect(kind({ cross_up: true, regime_ok: true })).toBe("entry");
     expect(coinState({ cross_up: true, regime_ok: true }, false).label).toBe("Вход");
     expect(kind({ cross_up: true, regime_ok: false })).toBe("filtered");
+    expect(coinState({ cross_up: true, regime_ok: true, trend_ok: false }, false))
+      .toMatchObject({ kind: "filtered", label: "Фильтр тренда" });
+    expect(kind({ cross_up: true, regime_ok: true, trend_ok: true })).toBe("entry");
     expect(kind({ cross_up: true, regime_ok: true }, true)).toBe("held");
     expect(kind({ trend_down: true })).toBe("down");
     expect(kind({})).toBe("up");

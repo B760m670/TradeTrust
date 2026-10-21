@@ -127,6 +127,8 @@ class Recorder:
 @pytest.fixture
 def make_bot(tmp_path):
     def _make(mode="auto", coins=("SOL",), **kw):
+        # тесты правил исполнения написаны для риска 1% и коротких историй — без фильтра тренда
+        kw = {"risk_pct": 1.0, "max_positions": 5, "max_total_risk_pct": 5.0, "trend_filter": False, **kw}
         cfg = Config(mode=mode, coins=list(coins), ema_fast=3, ema_slow=6, db_path=str(tmp_path / "bot.db"), **kw)
         ex, rec = FakeExchange(), Recorder()
         bot = Bot(cfg, ex, Store(cfg.db_path), rec)
@@ -567,7 +569,7 @@ def test_settings_change_applies_persists_and_notifies(make_bot, tmp_path):
                 ex, Store(bot.cfg.db_path))
     assert (again.cfg.risk_pct, again.cfg.max_positions, again.cfg.btc_filter) == (0.5, 3, True)
     again.reset_settings()
-    assert again.cfg.risk_pct == 1.0 and again.store.get("settings") == {}
+    assert again.cfg.risk_pct == 0.3 and again.store.get("settings") == {}  # значения из .env этого запуска
 
 
 def test_half_percent_risk_halves_position(make_bot):
@@ -746,3 +748,49 @@ def test_each_candle_leaves_a_visible_scan_summary(make_bot):
     assert "Проверка рынка: 2 монет, в росте 1, вход: SOL" in bot.store.events()[0]["text"]
     bot.on_candle_close()  # та же свеча — повторно не записывается
     assert sum("Проверка рынка" in e["text"] for e in bot.store.events()) == 1
+
+
+# --- стратегия v2: фильтр тренда и переход уже работающего бота -------------------
+
+def cross_after(path):
+    """Свечи по траектории, обрезанные на первом пересечении EMA вверх после неё."""
+    df = candles(path)
+    data = bt.prepare(df, bt.Params(fast=3, slow=6, atr_period=3))
+    hits = [i for i, v in enumerate(data["cross_up"].to_numpy()) if v and i > 200]
+    return df.iloc[: hits[0] + 1]
+
+
+def test_trend_filter_buys_only_coins_that_grew(make_bot):
+    rising = cross_after(np.r_[np.linspace(100, 200, 200), np.linspace(200, 180, 15), np.linspace(180, 230, 30)])
+    falling = cross_after(np.r_[np.linspace(200, 100, 200), np.linspace(100, 90, 15), np.linspace(90, 120, 30)])
+    for coin, df, bought in (("SOL", rising, True), ("ETH", falling, False)):  # общая база — разные монеты
+        bot, ex, _ = make_bot("auto", coins=(coin,), trend_filter=True, trend_days=30)
+        ex.set(coin, df)
+        bot.on_candle_close()
+        sig = bot.store.get("signals")[coin]
+        assert sig["cross_up"] and sig["trend_ok"] is bought
+        assert (bot.store.position(coin) is not None) is bought
+
+
+def test_running_bot_moves_to_strategy_v2_once_keeping_owner_choices(tmp_path):
+    db = str(tmp_path / "bot.db")
+    old = dict(mode="auto", coins=["SOL"], ema_fast=3, ema_slow=6, db_path=db, risk_pct=1.0, max_positions=5,
+               max_total_risk_pct=5.0, trend_filter=False)
+    store = Store(db)
+    store.set("last_bar", 1)                 # бот уже работал
+    store.set("settings", {"max_total_risk_pct": 4.0})  # это владелец менял сам
+    rec = Recorder()
+    bot = Bot(Config(**old), FakeExchange(), store, rec)
+    assert (bot.cfg.risk_pct, bot.cfg.max_positions, bot.cfg.trend_filter) == (0.3, 25, True)
+    assert bot.cfg.max_total_risk_pct == 4.0
+    assert any("по итогам проверки" in t for t, _ in rec.sent)
+    rec.sent.clear()
+    bot.update_settings({"risk_pct": 1.0})   # владелец вернул риск — повторно не трогаем
+    again = Bot(Config(**old), FakeExchange(), Store(db), rec)
+    assert again.cfg.risk_pct == 1.0 and not any("по итогам проверки" in t for t, _ in rec.sent)
+
+
+def test_fresh_install_is_not_migrated(tmp_path):
+    rec = Recorder()
+    Bot(Config(db_path=str(tmp_path / "bot.db"), coins=["SOL"]), FakeExchange(), Store(str(tmp_path / "bot.db")), rec)
+    assert not rec.sent

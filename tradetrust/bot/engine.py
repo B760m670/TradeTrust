@@ -56,15 +56,16 @@ def fmt(x: float) -> str:
 # (EMA, ATR) — только в .env: на них построены проверки на истории.
 LIMITS: dict[str, tuple[type, float, float]] = {
     "risk_pct": (float, 0.1, 3.0),
-    "max_positions": (int, 1, 10),
+    "max_positions": (int, 1, 25),
     "max_position_pct": (float, 5.0, 50.0),
     "max_total_risk_pct": (float, 1.0, 10.0),
     "daily_loss_limit_pct": (float, 1.0, 10.0),
     "capital_usdt": (float, 0.0, 10_000_000.0),
     "proposal_ttl_min": (int, 15, 240),
     "report_hour_utc": (int, 0, 23),
+    "trend_days": (int, 30, 160),  # 160 дней — столько 4ч свечей (1000) отдаёт биржа за раз
 }
-FLAGS = ("btc_filter", "daily_report")
+FLAGS = ("btc_filter", "daily_report", "trend_filter")
 EDITABLE = (*LIMITS, *FLAGS, "coins")
 LABELS = {
     "risk_pct": "риск на сделку, %", "max_positions": "позиций максимум", "max_position_pct": "в одной монете, %",
@@ -72,7 +73,12 @@ LABELS = {
     "capital_usdt": "капитал бота, USDT", "proposal_ttl_min": "предложение действует, мин",
     "btc_filter": "фильтр BTC", "coins": "монеты",
     "daily_report": "ежедневный отчёт", "report_hour_utc": "время отчёта (UTC), ч",
+    "trend_filter": "только монеты в росте", "trend_days": "рост за, дней",
 }
+# Версия 2 стратегии (21.10.2026): маленький риск на все монеты + фильтр долгосрочного тренда.
+# Обоснование и цифры — README, «Портфель целиком», scripts/portfolio_study.py.
+STRATEGY_V2 = {"risk_pct": 0.3, "max_positions": 25, "max_total_risk_pct": 10.0, "trend_filter": True}
+OLD_DEFAULTS = {"risk_pct": 1.0, "max_positions": 5, "max_total_risk_pct": 5.0, "trend_filter": False}
 
 
 def check_settings(changes: dict, current: dict, extra_coins: list[str] = ()) -> dict:
@@ -139,6 +145,20 @@ class Bot:
             self._apply(check_settings(saved, self.defaults, self.defaults["coins"]))
         except ValueError as exc:  # границы могли измениться в новой версии — тогда работаем по .env
             log.warning("сохранённые настройки не применены: %s", exc)
+        self._migrate_strategy()
+
+    def _migrate_strategy(self) -> None:
+        """Один раз переводит уже работающего бота на стратегию v2 — только те настройки,
+        которые владелец не менял (совпадают со старыми значениями по умолчанию)."""
+        if self.store.get("strategy_version", 1) >= 2:
+            return
+        self.store.set("strategy_version", 2)
+        if not self.store.get("last_bar"):
+            return  # новая установка — значения по умолчанию уже новые
+        current = self.settings()
+        changes = {k: v for k, v in STRATEGY_V2.items() if current[k] == OLD_DEFAULTS[k]}
+        if changes:
+            self.update_settings(changes, "по итогам проверки всего счёта на истории 2022–2026")
 
     # --- настройки -----------------------------------------------------------
     def settings(self) -> dict:
@@ -149,7 +169,7 @@ class Bot:
             setattr(self.cfg, key, value)
         self.params = replace(self.params, risk=self.cfg.risk_pct / 100)
 
-    def update_settings(self, changes: dict) -> str:
+    def update_settings(self, changes: dict, source: str = "из приложения") -> str:
         with self.lock:
             before = self.settings()
             values = check_settings(changes, before, self.defaults["coins"])
@@ -159,7 +179,7 @@ class Bot:
             diff = [f"{LABELS[k]}: {_show(before[k])} → {_show(after[k])}" for k in EDITABLE if before[k] != after[k]]
             if not diff:
                 return "Без изменений"
-            self.notify("⚙️ Настройки изменены из приложения\n" + "\n".join(diff))
+            self.notify(f"⚙️ Настройки изменены {source}\n" + "\n".join(diff))
             return "Настройки сохранены"
 
     def reset_settings(self) -> str:
@@ -255,11 +275,17 @@ class Bot:
                 regime = btc_regime(regime_src, df.index) if regime_src is not None else None
                 data = bt.prepare(df, self.params, regime)
                 last = data.iloc[-1]
+                lookback = self.cfg.trend_days * 6  # 4ч свечей в сутках
+                momentum = (float(last["close"] / data["close"].iloc[-1 - lookback] - 1)
+                            if len(data) > lookback else None)
                 out[coin] = {
                     "bar": int(data.index[-1].timestamp()), "price": float(last["close"]),
                     "atr": float(last["atr"]), "ema_fast": float(last["ema_fast"]), "ema_slow": float(last["ema_slow"]),
                     "cross_up": bool(last["cross_up"]), "trend_down": bool(last["trend_down"]),
                     "regime_ok": bool(last["regime_ok"]),
+                    "momentum": momentum,
+                    # без истории на всё окно монета не проходит фильтр: силу роста не проверить
+                    "trend_ok": not self.cfg.trend_filter or (momentum is not None and momentum > 0),
                 }
             except Exception as exc:
                 log.warning("scan %s: %s", coin, exc)
@@ -290,7 +316,7 @@ class Bot:
                 self.notify(f"⛔ Дневной убыток достиг {self.cfg.daily_loss_limit_pct}% — новые сделки на паузе. "
                             "Снять: /resume")
             entries = [(c, s) for c, s in signals.items()
-                       if c in self.cfg.coins and s.get("cross_up") and s.get("regime_ok")]
+                       if c in self.cfg.coins and s.get("cross_up") and s.get("regime_ok") and s.get("trend_ok", True)]
             for coin, s in entries:
                 self.handle_entry_signal(coin, s)
             self.record_equity()
