@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type ChartData, type Status } from "../api";
-import { useLiveCandle, useLiveTickers } from "../live";
+import { useLiveCandle } from "../live";
+import { utcOffsetLabel } from "../logic";
 import { haptic, prefs } from "../telegram";
 import { CandleChart, useChartColors } from "./CandleChart";
 import { TickChart } from "./TickChart";
@@ -12,6 +13,7 @@ const TIMEFRAMES: [string, string, string][] = [
   ["4h", "4ч", "240"], ["1d", "1Д", "D"], ["1w", "1Н", "W"],
 ];
 const TF_KEY = "chart_tf";
+const ZONE = utcOffsetLabel(-new Date().getTimezoneOffset()); // часовой пояс телефона
 const BOT_TF = "4h";
 
 function useTimeframe(): [string, (tf: string) => void] {
@@ -48,12 +50,11 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   const colors = useChartColors();
   const [, label, code] = TIMEFRAMES.find(([k]) => k === tf)!;
   const live = useLiveCandle(coin, code || "240");
-  const ticker = useLiveTickers()[coin];
   const ticks = tf === "1s";
 
   let body;
   if (ticks) {
-    body = <TickChart coin={coin} value={ticker?.price} levels={pos ? { stop: pos.stop, entry: pos.entry } : null} />;
+    body = <TickChart coin={coin} levels={pos ? { stop: pos.stop, entry: pos.entry } : null} />;
   } else if (data && data.interval === tf) {
     body = <CandleChart data={data} live={live} />;
   } else if (error) {
@@ -78,7 +79,8 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
         {!ticks && <span><i style={{ background: colors.slow }} />EMA {set.ema_slow}</span>}
         {pos && !ticks && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп</span>}
         <span className="legend-tf">
-          {ticks ? "по секундам, раньше — по минутам" : `свечи ${label}`}{tf !== BOT_TF && " · бот решает по 4ч"}
+          {ticks ? "свеча — 1 секунда, из сделок Bybit" : `свечи ${label}`}{tf !== BOT_TF && " · бот решает по 4ч"}
+          {` · время ${ZONE}`}
         </span>
       </div>
     </Card>

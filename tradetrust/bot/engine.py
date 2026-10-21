@@ -689,6 +689,15 @@ class Bot:
             "position": p.__dict__ if p else None,
         }
 
+    def trades(self, coin: str) -> dict:
+        """Последние сделки рынка — начало секундного графика, дальше он идёт по потоку биржи."""
+        try:
+            trades = self.ex.recent_trades(self.symbol(coin))
+        except Exception as exc:  # без истории график просто начнётся с текущей секунды
+            log.warning("recent trades %s: %s", coin, exc)
+            trades = []
+        return {"coin": coin, "trades": trades}
+
     def status(self) -> dict:
         eq = self.equity()
         positions = []

@@ -37,6 +37,9 @@ class PaperExchange:
     def last_price(self, symbol):
         return self.market.last_price(symbol)
 
+    def recent_trades(self, symbol):
+        return self.market.recent_trades(symbol)
+
     def instrument(self, symbol) -> Instrument:
         return self.market.instrument(symbol)
 

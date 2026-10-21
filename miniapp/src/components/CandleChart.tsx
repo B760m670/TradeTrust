@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 import type { ChartData } from "../api";
 import type { LiveCandle } from "../live";
 import { chartPrice } from "../format";
+import { crosshairTime, tickMark } from "./chartTime";
 import { useTheme, type Theme } from "../theme";
 
 // те же цвета, что в styles.css (--up, --down, --accent, --faint) для каждой темы
@@ -62,8 +63,9 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
         horzLine: { color: FAST, labelBackgroundColor: FAST },
       },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p) },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMark },
+      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p),
+        timeFormatter: crosshairTime(!["1d", "1w"].includes(data.interval)) },
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
 

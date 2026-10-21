@@ -3,7 +3,7 @@ import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { BackIcon } from "../components/icons";
 import { Button, Card, Chip, CoinAvatar, Flash, LiveBadge, RangeBar, Tile, Value } from "../components/ui";
-import { pct, price, tone, usd } from "../format";
+import { chartPrice, pct, price, tone, usd } from "../format";
 import { useLiveTickers } from "../live";
 import { coinState, emaGap, entryPlan } from "../logic";
 import { confirmAction } from "../telegram";
@@ -41,7 +41,7 @@ export function Coin({ coin, status: s, busy, act, wide, onBack }: Props) {
           <Chip tone={state.tone}>{state.label}</Chip>
         </div>
         <div className="row-end">
-          <Flash value={now} className="coin-price num">{price(now)}</Flash>
+          <Flash value={now} className="coin-price num">{now == null ? "—" : chartPrice(now)}</Flash>
           {ticker ? <span className={`small num tone-${tone(ticker.change24h)}`}>{pct(ticker.change24h, true)} за 24 ч</span>
             : null}
           <LiveBadge on={!!ticker} />
