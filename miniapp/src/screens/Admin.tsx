@@ -171,6 +171,10 @@ function System({ data }: { data: AdminData }) {
   const mem = s.memory;
   const memLow = mem.available_mb != null && mem.total_mb != null && mem.available_mb / mem.total_mb < 0.1;
   const diskLow = s.disk.free_gb < 1;
+  const cpu = s.cpu;
+  const cpuHigh = cpu != null && ((cpu.pct ?? 0) > 80 || (cpu.load[0] ?? 0) > cpu.cores * 0.9);
+  const swapUsed = mem.swap_total_mb ? mem.swap_total_mb - (mem.swap_free_mb ?? 0) : null;
+  const num1 = (x: number) => x.toFixed(2).replace(".", ",");
   return (
     <>
       <Card title="Бот">
@@ -188,14 +192,23 @@ function System({ data }: { data: AdminData }) {
       </Card>
       <Card title="Сервер">
         <Row label="Версия" ok="up">{s.version}{s.built_at ? ` · собрана ${new Date(s.built_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}</Row>
+        {cpu && (
+          <Row label="Процессор" ok={cpuHigh ? "amber" : "up"}>
+            {cpu.pct != null ? `${Math.round(cpu.pct)}% сейчас · ` : ""}средняя {cpu.load.map(num1).join(" / ")} на {cpu.cores} ядра
+          </Row>
+        )}
         <Row label="Память" ok={memLow ? "amber" : "up"}>
-          бот {mem.process_mb != null ? `${Math.round(mem.process_mb)} МБ` : "—"}
-          {mem.total_mb != null ? ` · свободно ${mem.available_mb} из ${mem.total_mb} МБ` : ""}
+          {mem.total_mb != null ? `свободно ${mem.available_mb} из ${mem.total_mb} МБ` : "—"}
+          {mem.process_mb != null ? ` · бот ${Math.round(mem.process_mb)} МБ` : ""}
         </Row>
+        {swapUsed != null && (
+          <Row label="Подкачка" ok="up">занято {swapUsed} из {mem.swap_total_mb} МБ</Row>
+        )}
         <Row label="Диск" ok={diskLow ? "amber" : "up"}>
           свободно {s.disk.free_gb.toFixed(1).replace(".", ",")} из {s.disk.total_gb.toFixed(0)} ГБ · данные {s.disk.data_mb.toFixed(1).replace(".", ",")} МБ
         </Row>
       </Card>
+      <Services host={s.host} totalMb={mem.total_mb} now={now} />
       <Card title="Последние ошибки" aside={<span className="muted small">{s.errors.length || "нет"}</span>}>
         {s.errors.length === 0
           ? <p className="muted small">Ошибок и предупреждений с момента запуска не было.</p>
@@ -212,6 +225,36 @@ function System({ data }: { data: AdminData }) {
           )}
       </Card>
     </>
+  );
+}
+
+/** Кто сколько ест: контейнеры и службы сервера (VPN, панель, сайт, бот). */
+function Services({ host, totalMb, now }: { host: AdminData["system"]["host"]; totalMb: number | null; now: number }) {
+  if (!host?.ts) {
+    return (
+      <Card title="Сервисы на сервере">
+        <p className="muted small">Появится после ближайшего автообновления сервера (раз в час, в :35): там включится
+          сбор нагрузки по каждому сервису — VPN, панель, сайт, боты.</p>
+      </Card>
+    );
+  }
+  const max = Math.max(totalMb ?? 0, ...host.services.map((r) => r.mem_mb), 1);
+  return (
+    <Card title="Сервисы на сервере" aside={<span className={`small ${host.fresh ? "muted" : "tone-amber"}`}>
+      {host.fresh ? `обновлено ${ago(host.ts, now)}` : `данные устарели: ${ago(host.ts, now)}`}</span>}>
+      <div className="svc-head muted small"><span>Сервис</span><span>Память</span><span>Процессор</span></div>
+      <ul className="svc-list">
+        {host.services.map((r) => (
+          <li key={`${r.kind}:${r.name}`}>
+            <span className="svc-name" title={r.name}>{r.label}</span>
+            <span className="svc-mem num">{Math.round(r.mem_mb)} МБ</span>
+            <span className="svc-cpu num">{r.cpu_pct < 0.5 ? "<1" : Math.round(r.cpu_pct)}%</span>
+            <span className="svc-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, (r.mem_mb / max) * 100)}%` }} /></span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small svc-note">Память — от {totalMb ?? "—"} МБ сервера, процессор — доля всего сервера.</p>
+    </Card>
   );
 }
 

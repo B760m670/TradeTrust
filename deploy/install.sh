@@ -208,6 +208,7 @@ WantedBy=timers.target
 UNIT
 systemctl daemon-reload
 systemctl enable --now tradetrust-update.timer >/dev/null
+"$DIR/deploy/host-stats-install.sh" || true  # нагрузка сервера для админки
 
 API_TOKEN=$(env_get API_TOKEN)
 say "Готово."

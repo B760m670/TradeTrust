@@ -18,3 +18,6 @@ if [ "$before" != "$after" ]; then
 else
   echo "новой версии нет"
 fi
+
+# нагрузка сервера по сервисам для админки бота (ставится один раз, дальше ничего не меняет)
+[ -x deploy/host-stats-install.sh ] && deploy/host-stats-install.sh || true

@@ -563,3 +563,13 @@ button.card { text-align: left; width: 100%; }
 .broadcast { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border);
   background: var(--inset); color: var(--text); font: inherit; font-size: 15px; resize: vertical; margin-bottom: 12px; }
 .bottom-nav.six button span { font-size: 10px; }
+.svc-head, .svc-list li { display: grid; grid-template-columns: minmax(0, 1fr) 72px 60px; gap: 4px 10px; align-items: baseline; }
+.svc-head { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.svc-head span:not(:first-child), .svc-mem, .svc-cpu { text-align: right; }
+.svc-list { list-style: none; margin: 0; padding: 0; }
+.svc-list li { padding: 9px 0 8px; font-size: 14px; }
+.svc-list li + li { border-top: 1px solid var(--border); }
+.svc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--inset); overflow: hidden; }
+.svc-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.svc-note { margin: 10px 0 0; }

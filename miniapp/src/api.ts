@@ -270,9 +270,23 @@ export interface AdminSystem {
   next_scan: number;
   bybit: { ok_at: number | null; error_at: number | null; error: string };
   telegram: { ok_at: number | null; error: string };
-  memory: { process_mb: number | null; total_mb: number | null; available_mb: number | null };
+  memory: {
+    process_mb: number | null; total_mb: number | null; available_mb: number | null;
+    swap_total_mb?: number | null; swap_free_mb?: number | null;
+  };
+  cpu?: { pct: number | null; load: number[]; cores: number };
+  /** нагрузка по сервисам — собирает сервер раз в минуту (deploy/host_stats.py) */
+  host?: { ts: number | null; fresh?: boolean; services: HostService[] };
   disk: { total_gb: number; free_gb: number; data_mb: number };
   errors: { ts: number; level: string; source: string; text: string }[];
+}
+
+export interface HostService {
+  name: string;
+  label: string;
+  kind: "docker" | "service";
+  mem_mb: number;
+  cpu_pct: number;
 }
 
 export interface AdminData {
