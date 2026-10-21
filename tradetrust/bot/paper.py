@@ -31,8 +31,8 @@ class PaperExchange:
         b[coin] = b.get(coin, 0.0) + amount
         self.store.set("paper_balances", b)
 
-    def candles(self, symbol, interval, limit=1000):
-        return self.market.candles(symbol, interval, limit)
+    def candles(self, symbol, interval, limit=1000, end=None):
+        return self.market.candles(symbol, interval, limit, end) if end else self.market.candles(symbol, interval, limit)
 
     def last_price(self, symbol):
         return self.market.last_price(symbol)

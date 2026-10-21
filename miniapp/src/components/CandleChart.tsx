@@ -1,6 +1,8 @@
 import {
+  AreaSeries,
   CandlestickSeries,
   ColorType,
+  HistogramSeries,
   LineSeries,
   LineStyle,
   createChart,
@@ -11,143 +13,169 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef, type RefObject } from "react";
-import type { ChartData } from "../api";
-import type { LiveCandle } from "../live";
 import { chartPrice } from "../format";
+import { useTheme, type Theme } from "../theme";
+import { ema, type Bar, type Interval } from "./candles";
 import { crosshairTime, tickMark } from "./chartTime";
 import { CloseCountdown, PERIOD_SEC } from "./countdown";
-import { useTheme, type Theme } from "../theme";
 
-// те же цвета, что в styles.css (--up, --down, --accent, --faint) для каждой темы
+// те же цвета, что в styles.css (--up, --down, --accent, --demo, --faint) для каждой темы
 const PALETTE: Record<Theme, { up: string; down: string; fast: string; slow: string; text: string; grid: string }> = {
-  dark: { up: "#4FE3B0", down: "#FF7A8A", fast: "#8B7CFF", slow: "#F5B86B", text: "rgba(244,245,248,0.45)", grid: "rgba(255,255,255,0.05)" },
-  light: { up: "#0C9A6A", down: "#E0444F", fast: "#6C5CF0", slow: "#E0912B", text: "rgba(17,18,28,0.45)", grid: "rgba(17,18,28,0.06)" },
+  dark: { up: "#20D49A", down: "#FF5470", fast: "#8B7CFF", slow: "#3B9EFF", text: "rgba(236,239,244,0.45)", grid: "rgba(255,255,255,0.05)" },
+  light: { up: "#0A9A6A", down: "#E33B55", fast: "#6C5CF0", slow: "#1F6FE5", text: "rgba(13,16,22,0.45)", grid: "rgba(13,16,22,0.06)" },
 };
 const VISIBLE_BARS = 90;
-
-const chartColors = (theme: Theme) => PALETTE[theme];
+const MORE_AT = 15; // осталось столько свечей до левого края — подгружаем более старую историю
 
 export function useChartColors() {
   const { theme } = useTheme();
-  return chartColors(theme);
+  return PALETTE[theme];
 }
 
-/** Свечной график TradingView Lightweight Charts: свечи 4ч, EMA, стоп и цена входа. */
-export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartData; bars?: number; live?: LiveCandle | null }) {
+export type ChartKind = "candles" | "line";
+
+const ts = (t: number) => t as UTCTimestamp;
+
+/** Свечной график, как на бирже: свечи или линия, объём, EMA, вход и стоп бота, живая свеча, история назад. */
+export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }: {
+  bars: Bar[]; interval: Interval; kind: ChartKind; emas: [number, number] | null;
+  position: { entry: number; stop: number } | null; onNeedMore?: () => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
-  const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const liveRef = useRef(live);
-  liveRef.current = live;
-  const price = useRef<number | null>(null); // последняя цена — для отсчёта до закрытия свечи
-  const lastClosed = data.time[data.time.length - 1] ?? 0;
-
-  // формирующаяся свеча: обновляется каждую секунду, закрытые свечи не трогает
-  const applyLive = (c: LiveCandle | null | undefined) => {
-    if (!c || !series.current || c.time <= lastClosed) return;
-    series.current.update({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close });
-    price.current = c.close;
-  };
-  useEffect(() => applyLive(live), [live]);
+  const main = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
+  const vol = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const lines = useRef<ISeriesApi<"Line">[]>([]);
+  const shown = useRef<Bar[]>([]); // что сейчас на графике — чтобы обновлять только последнюю свечу
+  const price = useRef<number | null>(null);
+  const refPrice = useRef<number | null>(bars[bars.length - 1]?.close ?? null);
+  const needMore = useRef(onNeedMore);
+  needMore.current = onNeedMore;
   const { theme } = useTheme();
+  const colors = PALETTE[theme];
+  const levels = position ? [position.stop, position.entry] : [];
+  const levelsRef = useRef(levels);
+  levelsRef.current = levels;
 
+  // график создаётся заново только при смене вида, таймфрейма или темы
   useEffect(() => {
     if (!box.current) return;
-    const { up: UP, down: DOWN, fast: FAST, slow, text, grid } = chartColors(theme);
-    const chart: IChartApi = createChart(box.current, {
+    const { up, down, fast, text, grid } = colors;
+    const chart = createChart(box.current, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: text,
-        fontFamily: "'Manrope Variable', system-ui, sans-serif",
-      },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: text,
+        fontFamily: "'Manrope Variable', system-ui, sans-serif", attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
-      crosshair: {
-        vertLine: { color: FAST, labelBackgroundColor: FAST },
-        horzLine: { color: FAST, labelBackgroundColor: FAST },
-      },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMark },
-      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p),
-        timeFormatter: crosshairTime(!["1d", "1w"].includes(data.interval)) },
+      crosshair: { vertLine: { color: fast, labelBackgroundColor: fast }, horzLine: { color: fast, labelBackgroundColor: fast } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.22 } },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMark, rightOffset: 4 },
+      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p, refPrice.current ?? p),
+        timeFormatter: crosshairTime(!["1d", "1w"].includes(interval)) },
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
-
-    const levels = data.position ? [data.position.stop, data.position.entry] : [];
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false,
-      // шкала цены по умолчанию не видит линии стопа и входа — расширяем её, чтобы стоп всегда был на графике
-      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
-        const info = original();
-        if (!info?.priceRange || !levels.length) return info;
-        return {
-          ...info,
-          priceRange: {
-            minValue: Math.min(info.priceRange.minValue, ...levels),
-            maxValue: Math.max(info.priceRange.maxValue, ...levels),
-          },
-        };
-      },
-    });
-    candles.setData(
-      data.time.flatMap((t, i) => {
-        const [o, h, l, c] = [data.open[i], data.high[i], data.low[i], data.close[i]];
-        return o == null || h == null || l == null || c == null
-          ? [] : [{ time: t as UTCTimestamp, open: o, high: h, low: l, close: c }];
-      }),
-    );
-
-    const line = (values: (number | null)[], color: string) => {
-      const s = chart.addSeries(LineSeries, {
-        color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-      });
-      s.setData(data.time.flatMap((t, i) => {
-        const v = values[i];
-        return v == null ? [] : [{ time: t as UTCTimestamp, value: v }];
-      }));
+    // вход и стоп бота попадают на шкалу, если они рядом с ценой; далёкие не сжимают свечи в полоску
+    const autoscaleInfoProvider = (original: () => AutoscaleInfo | null) => {
+      const info = original();
+      const ref = refPrice.current;
+      const lv = levelsRef.current.filter((x) => ref != null && Math.abs(x / ref - 1) < 0.06);
+      if (!info?.priceRange || !lv.length) return info;
+      return { ...info, priceRange: { minValue: Math.min(info.priceRange.minValue, ...lv), maxValue: Math.max(info.priceRange.maxValue, ...lv) } };
     };
-    line(data.ema_fast, FAST);
-    line(data.ema_slow, slow);
-
-    if (data.position) {
-      candles.createPriceLine({ price: data.position.stop, color: DOWN, lineStyle: LineStyle.Dashed, lineWidth: 1,
-        axisLabelVisible: true, title: "стоп" });
-      candles.createPriceLine({ price: data.position.entry, color: text, lineStyle: LineStyle.Dotted, lineWidth: 1,
-        axisLabelVisible: true, title: "вход" });
-    }
-
-    const n = data.time.length;
-    price.current = data.close[n - 1] ?? null;
-    series.current = candles;
+    main.current = kind === "candles"
+      ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false, autoscaleInfoProvider })
+      : chart.addSeries(AreaSeries, { lineColor: fast, topColor: `${fast}55`, bottomColor: `${fast}00`, lineWidth: 2, autoscaleInfoProvider });
+    vol.current = chart.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
     chartRef.current = chart;
-    applyLive(liveRef.current);
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
+    shown.current = [];
+    chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      if (r && r.from < MORE_AT) needMore.current?.();
+    });
     return () => {
-      series.current = null;
-      chartRef.current = null;
       chart.remove();
+      chartRef.current = null;
+      main.current = null;
+      vol.current = null;
+      lines.current = [];
+      shown.current = [];
     };
-  }, [data, bars, theme]);
+  }, [interval, kind, theme]);
 
-  // приближение кнопками (на телефоне — ещё и двумя пальцами, на ПК — колесом)
+  // данные: живая свеча — точечное обновление, подгруженная история — с сохранением того, что видно
+  useEffect(() => {
+    const chart = chartRef.current, s = main.current, v = vol.current;
+    if (!chart || !s || !v || !bars.length) return;
+    const prev = shown.current;
+    const point = (b: Bar) => (kind === "candles"
+      ? { time: ts(b.time), open: b.open, high: b.high, low: b.low, close: b.close }
+      : { time: ts(b.time), value: b.close });
+    const volPoint = (b: Bar) => ({ time: ts(b.time), value: b.volume, color: b.close >= b.open ? `${colors.up}55` : `${colors.down}55` });
+    const sameStart = prev.length > 0 && prev[0].time === bars[0].time;
+    const tail = sameStart && bars.length - prev.length <= 1 && bars.length >= prev.length;
+    if (tail) {
+      const b = bars[bars.length - 1];
+      (s as ISeriesApi<SeriesType>).update(point(b) as never);
+      v.update(volPoint(b));
+    } else {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      const added = prev.length ? bars.findIndex((b) => b.time === prev[0].time) : -1;
+      (s as ISeriesApi<SeriesType>).setData(bars.map(point) as never);
+      v.setData(bars.map(volPoint));
+      if (range && added > 0) chart.timeScale().setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
+      else if (!prev.length) chart.timeScale().setVisibleLogicalRange({ from: bars.length - VISIBLE_BARS, to: bars.length + 4 });
+    }
+    // EMA считаем по всей истории — так же, как бот; на живой свече двигаем только последнюю точку
+    const closes = bars.map((b) => b.close);
+    const last = bars[bars.length - 1];
+    if (tail && emas && lines.current.length === emas.length) {
+      emas.forEach((period, i) => {
+        const value = ema(closes, period)[closes.length - 1];
+        if (value != null) lines.current[i].update({ time: ts(last.time), value });
+      });
+    } else {
+      lines.current.forEach((l) => chart.removeSeries(l));
+      lines.current = [];
+    }
+    if (emas && !lines.current.length) {
+      emas.forEach((period, i) => {
+        const l = chart.addSeries(LineSeries, { color: i ? colors.slow : colors.fast, lineWidth: 2, priceLineVisible: false,
+          lastValueVisible: false, crosshairMarkerVisible: false });
+        const values = ema(closes, period);
+        l.setData(bars.flatMap((b, j) => (values[j] == null ? [] : [{ time: ts(b.time), value: values[j]! }])));
+        lines.current.push(l);
+      });
+    }
+    shown.current = bars;
+    price.current = bars[bars.length - 1].close;
+  }, [bars, emas?.[0], emas?.[1], kind, colors]);
+
+  // вход и стоп бота
+  useEffect(() => {
+    const s = main.current;
+    if (!s || !position) return;
+    const stop = s.createPriceLine({ price: position.stop, color: colors.down, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true, title: "стоп" });
+    const entry = s.createPriceLine({ price: position.entry, color: colors.text, lineStyle: LineStyle.Dotted, lineWidth: 1, axisLabelVisible: true, title: "вход бота" });
+    return () => {
+      if (main.current !== s) return; // график уже пересоздан вместе с линиями
+      s.removePriceLine(stop);
+      s.removePriceLine(entry);
+    };
+  }, [position?.entry, position?.stop, interval, kind, theme]);
+
   const zoom = (factor: number) => {
-    const ts = chartRef.current?.timeScale();
-    const r = ts?.getVisibleLogicalRange();
-    if (!ts || !r) return;
-    const width = Math.min(data.time.length + 20, Math.max(12, (r.to - r.from) * factor));
-    ts.setVisibleLogicalRange({ from: r.to - width, to: r.to });
+    const t = chartRef.current?.timeScale();
+    const r = t?.getVisibleLogicalRange();
+    if (!t || !r) return;
+    const width = Math.max(12, (r.to - r.from) * factor);
+    t.setVisibleLogicalRange({ from: r.to - width, to: r.to });
   };
-  const reset = () => {
-    const n = data.time.length;
-    chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - bars), to: n + 2 });
-  };
+  const reset = () => chartRef.current?.timeScale().setVisibleLogicalRange({ from: bars.length - VISIBLE_BARS, to: bars.length + 4 });
 
   return (
     <div className="chart-wrap">
       <div ref={box} className="chart" data-testid="chart" />
       <ZoomControls onZoom={zoom} onReset={reset} />
-      <CloseCountdown chart={chartRef} series={series as RefObject<ISeriesApi<SeriesType> | null>} price={price}
-        period={PERIOD_SEC[data.interval]} />
+      <CloseCountdown chart={chartRef} series={main as RefObject<ISeriesApi<SeriesType> | null>} price={price} period={PERIOD_SEC[interval]} />
     </div>
   );
 }
@@ -161,4 +189,3 @@ export function ZoomControls({ onZoom, onReset }: { onZoom: (factor: number) => 
     </div>
   );
 }
-

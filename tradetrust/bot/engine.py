@@ -760,12 +760,16 @@ class Bot:
                         self.notify(f"⚠️ {p.coin}: стоп-ордер пропал — поставил заново на {fmt(p.stop)}")
 
     # --- отчёты ----------------------------------------------------------------
-    def chart(self, coin: str, interval: str = "4h", bars: int = 300) -> dict:
+    def chart(self, coin: str, interval: str = "4h", bars: int = 500, end: int | None = None) -> dict:
         """Свечи с EMA для графика в мини-приложении. Решения бот принимает только по 4ч;
-        на других таймфреймах EMA считаются по их свечам — для обзора."""
+        на других таймфреймах EMA считаются по их свечам — для обзора.
+        end (мс) — более старая история: свечи, открытые до этого времени."""
         if interval not in CHART_INTERVALS:
             raise ValueError(f"interval: {', '.join(CHART_INTERVALS)}")
-        df = self.ex.candles(self.symbol(coin), interval, 1000)
+        sym = self.symbol(coin)
+        df = self.ex.candles(sym, interval, 1000, end=end) if end else self.ex.candles(sym, interval, 1000)
+        if end:
+            df = df[df.index < pd.Timestamp(end, unit="ms", tz="UTC")]
         data = bt.prepare(df, self.params).iloc[-bars:]
         nan_to_none = lambda col: [None if pd.isna(v) else round(float(v), 10) for v in data[col]]  # noqa: E731
         p = self.store.position(coin)
@@ -773,7 +777,7 @@ class Bot:
             "coin": coin,
             "interval": interval,
             "time": [int(t.timestamp()) for t in data.index],
-            **{k: nan_to_none(k) for k in ("open", "high", "low", "close", "ema_fast", "ema_slow", "atr")},
+            **{k: nan_to_none(k) for k in ("open", "high", "low", "close", "volume", "ema_fast", "ema_slow", "atr")},
             "position": p.__dict__ if p else None,
         }
 

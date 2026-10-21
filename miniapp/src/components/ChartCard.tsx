@@ -1,56 +1,43 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { api, type ChartData, type Status } from "../api";
+import { useMemo, useState, type ReactNode } from "react";
+import type { Status } from "../api";
 import { useLiveCandle } from "../live";
 import { utcOffsetLabel } from "../logic";
-import { prefs } from "../telegram";
-import { CandleChart, useChartColors } from "./CandleChart";
-import { TradingViewChart } from "./TradingViewChart";
-import { Card, Empty, Segmented, Skeleton } from "./ui";
+import { haptic, prefs } from "../telegram";
+import { CandleChart, useChartColors, type ChartKind } from "./CandleChart";
+import { INTERVALS, STREAM_CODE, useCandles, withLive, type Interval } from "./candles";
+import { Card, Empty, Skeleton } from "./ui";
 
-type View = "market" | "bot";
-const VIEWS: [View, string][] = [["market", "График"], ["bot", "Бот · 4ч"]];
-const VIEW_KEY = "chart_view";
 const ZONE = utcOffsetLabel(-new Date().getTimezoneOffset()); // часовой пояс телефона
+const TF_KEY = "chart_tf", KIND_KEY = "chart_kind", EMA_KEY = "chart_ema";
 
-function useView(): [View, (v: View) => void] {
-  const [view, setView] = useState<View>(() => (prefs.getLocal(VIEW_KEY) === "bot" ? "bot" : "market"));
-  return [view, (next) => { setView(next); prefs.set(VIEW_KEY, next); }];
+function usePref<T extends string>(key: string, allowed: readonly T[], fallback: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(() => {
+    const saved = prefs.getLocal(key) as T | null;
+    return saved && allowed.includes(saved) ? saved : fallback;
+  });
+  return [value, (v) => { haptic(); setValue(v); prefs.set(key, v); }];
 }
 
-/** 4ч свечи для вида «Бот»; перезагружаются, когда меняются вход или стоп позиции. */
-function useBotChart(coin: string, status: Status, enabled: boolean) {
-  const [data, setData] = useState<ChartData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const pos = status.positions.find((p) => p.coin === coin);
-  const posKey = pos ? `${pos.entry}:${pos.stop}` : "";
-  useEffect(() => {
-    if (!enabled) return;
-    let alive = true;
-    setData(null);
-    setError(null);
-    api.chart(coin, "4h").then((d) => alive && setData(d), (e: Error) => alive && setError(e.message));
-    return () => { alive = false; };
-  }, [coin, posKey, enabled]);
-  return { data, error, pos };
-}
-
-/** Два вида, как на бирже: «График» — полный TradingView с данными Bybit (все таймфреймы и индикаторы),
- *  «Бот · 4ч» — то, по чему бот принимает решения: свечи 4ч, EMA, вход и стоп позиции. */
+/** Один график, как на бирже: таймфреймы, свечи или линия, объём, EMA бота, вход и стоп его позиции.
+ *  История — с сервера бота, текущая свеча — из потока Bybit, поэтому цена на графике совпадает с ценой в шапке. */
 export function ChartCard({ coin, status, title, aside, tall, className }: {
   coin: string; status: Status; title?: ReactNode; aside?: ReactNode; tall?: boolean; className?: string;
 }) {
-  const [view, setView] = useView();
-  const isBot = view === "bot";
-  const { data, error, pos } = useBotChart(coin, status, isBot);
+  const [interval, setTf] = usePref<Interval>(TF_KEY, INTERVALS.map(([k]) => k), "15m");
+  const [kind, setKind] = usePref<ChartKind>(KIND_KEY, ["candles", "line"], "candles");
+  const [emaOn, setEma] = usePref<"on" | "off">(EMA_KEY, ["on", "off"], "on");
+  const { bars, error, loadMore } = useCandles(coin, interval);
+  const live = useLiveCandle(coin, STREAM_CODE[interval]);
+  const shown = useMemo(() => (bars ? withLive(bars, live, live?.volume) : null), [bars, live]);
   const set = status.settings;
   const colors = useChartColors();
-  const live = useLiveCandle(coin, isBot ? "240" : "");
+  const pos = status.positions.find((p) => p.coin === coin) ?? null;
+  const emas = useMemo<[number, number] | null>(() => (emaOn === "on" ? [set.ema_fast, set.ema_slow] : null), [emaOn, set.ema_fast, set.ema_slow]);
+  const position = useMemo(() => (pos ? { entry: pos.entry, stop: pos.stop } : null), [pos?.entry, pos?.stop]);
 
   let body;
-  if (!isBot) {
-    body = <TradingViewChart coin={coin} />;
-  } else if (data) {
-    body = <CandleChart data={data} live={live} />;
+  if (shown?.length) {
+    body = <CandleChart bars={shown} interval={interval} kind={kind} emas={emas} position={position} onNeedMore={loadMore} />;
   } else if (error) {
     body = <Empty title="График не загрузился">{error}</Empty>;
   } else {
@@ -58,20 +45,27 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   }
 
   return (
-    <Card title={title} aside={aside} className={`chart-card ${isBot ? "" : "market"} ${tall ? "tall" : ""} ${className ?? ""}`}>
-      <Segmented label="Вид графика" options={VIEWS} value={view} onChange={setView} />
+    <Card title={title} aside={aside} className={`chart-card ${tall ? "tall" : ""} ${className ?? ""}`}>
+      <div className="chart-tools">
+        <div className="tf-picker" role="radiogroup" aria-label="Таймфрейм">
+          {INTERVALS.map(([k, label]) => (
+            <button key={k} role="radio" aria-checked={k === interval} className={k === interval ? "on" : undefined}
+              onClick={() => k !== interval && setTf(k)}>{label}</button>
+          ))}
+        </div>
+        <div className="chart-switches">
+          <button aria-pressed={emaOn === "on"} className={emaOn === "on" ? "on" : undefined}
+            onClick={() => setEma(emaOn === "on" ? "off" : "on")}>EMA</button>
+          <button aria-label={kind === "candles" ? "Показать линией" : "Показать свечами"}
+            onClick={() => setKind(kind === "candles" ? "line" : "candles")}>{kind === "candles" ? "Свечи" : "Линия"}</button>
+        </div>
+      </div>
       <div className="chart-area">{body}</div>
       <div className="legend">
-        {isBot ? (
-          <>
-            <span><i style={{ background: colors.fast }} />EMA {set.ema_fast}</span>
-            <span><i style={{ background: colors.slow }} />EMA {set.ema_slow}</span>
-            {pos && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп</span>}
-            <span className="legend-tf">свечи 4ч — по ним бот решает · время {ZONE}</span>
-          </>
-        ) : (
-          <span className="legend-tf">TradingView · спот Bybit · время {ZONE}</span>
-        )}
+        {emas && <span><i style={{ background: colors.fast }} />EMA {set.ema_fast}</span>}
+        {emas && <span><i style={{ background: colors.slow }} />EMA {set.ema_slow}</span>}
+        {pos && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп бота</span>}
+        <span className="legend-tf">спот Bybit · бот решает по 4ч · время {ZONE}</span>
       </div>
     </Card>
   );

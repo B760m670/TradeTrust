@@ -163,7 +163,10 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                         return self._send(400, {"error": "unknown coin"})
                     if interval not in CHART_INTERVALS:
                         return self._send(400, {"error": "unknown interval"})
-                    return self._send(200, bot.chart(coin, interval))
+                    end = (query.get("end") or [""])[0]
+                    if end and not end.isdigit():
+                        return self._send(400, {"error": "end: время в мс"})
+                    return self._send(200, bot.chart(coin, interval, end=int(end) if end else None))
                 if url.path == "/api/trades":
                     coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
                     if coin not in bot.watched_coins():
