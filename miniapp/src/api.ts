@@ -114,6 +114,8 @@ export interface Status {
   all_coins: string[];
   equity_history: [number, number][]; // [время, капитал] после каждой 4ч свечи
   last_scan: Scan | null;
+  /** true — это владелец: ему видна админка */
+  admin?: boolean;
 }
 
 /** Итог последней проверки рынка (после закрытия 4ч свечи). */
@@ -210,5 +212,73 @@ export const api = {
   resume: () => request<Message>("/api/resume", "POST"),
   close: (coin: string) => request<Message>(`/api/positions/${coin}/close`, "POST"),
   saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
+  admin: () => request<AdminData>("/api/admin"),
+  saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),
+  userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>
+    request<Message>(`/api/admin/users/${encodeURIComponent(id)}/${action}`, "POST", {}),
+  broadcast: (text: string) => request<Message>("/api/admin/broadcast", "POST", { text }),
   resetSettings: () => request<Message>("/api/settings", "POST", { reset: true }),
 };
+
+// --- админка владельца ---------------------------------------------------------
+
+export interface AdminSettings {
+  registration_open: boolean;
+  notify_new_users: boolean;
+  max_users: number;
+  demo_start_usdt: number;
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  username: string;
+  joined_at: number | null;
+  last_seen: number | null;
+  equity: number | null;
+  start: number;
+  pnl_pct: number | null;
+  positions: number;
+  trades: number;
+  wins: number;
+  mode: Mode;
+  paused: string | null;
+  blocked: boolean;
+}
+
+export interface AdminStats {
+  total: number;
+  new_day: number;
+  new_week: number;
+  active_day: number;
+  active_week: number;
+  profitable: number;
+  losing: number;
+  blocked: number;
+  signups: { day: number; count: number }[];
+}
+
+export interface AdminSystem {
+  version: string;
+  built_at: string;
+  started_at: number;
+  now: number;
+  env: Env;
+  mode: Mode;
+  paused: string | null;
+  last_scan: number | null;
+  next_scan: number;
+  bybit: { ok_at: number | null; error_at: number | null; error: string };
+  telegram: { ok_at: number | null; error: string };
+  memory: { process_mb: number | null; total_mb: number | null; available_mb: number | null };
+  disk: { total_gb: number; free_gb: number; data_mb: number };
+  errors: { ts: number; level: string; source: string; text: string }[];
+}
+
+export interface AdminData {
+  available: boolean;
+  settings: AdminSettings | null;
+  stats: AdminStats | null;
+  users: AdminUser[];
+  system: AdminSystem;
+}

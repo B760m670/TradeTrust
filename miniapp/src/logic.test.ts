@@ -6,7 +6,7 @@ import { crosshairTime, tickMark } from "./components/chartTime";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
   allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
-  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar,
+  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar, ago, duration, filterUsers,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -246,5 +246,23 @@ describe("live feed state", () => {
     expect(utcOffsetLabel(180)).toBe("UTC+3");
     expect(utcOffsetLabel(330)).toBe("UTC+5:30");
     expect(utcOffsetLabel(-240)).toBe("UTC−4");
+  });
+});
+
+describe("admin helpers", () => {
+  it("formats last seen, uptime and searches users", () => {
+    expect(ago(null, 100)).toBe("—");
+    expect(ago(90, 100)).toBe("только что");
+    expect(ago(0, 600)).toBe("10 мин назад");
+    expect(ago(0, 3 * 3600)).toBe("3 ч назад");
+    expect(ago(0, 2 * 86400 + 5)).toBe("2 дн назад");
+    expect(duration(125)).toBe("2 мин");
+    expect(duration(5 * 3600 + 12 * 60)).toBe("5 ч 12 мин");
+    expect(duration(2 * 86400 + 4 * 3600)).toBe("2 дн 4 ч");
+    const rows = [{ id: "7", name: "Анна", username: "anna" }, { id: "8", name: "Борис", username: "" }];
+    expect(filterUsers(rows, "").length).toBe(2);
+    expect(filterUsers(rows, "@ANNA").map((r) => r.id)).toEqual(["7"]);
+    expect(filterUsers(rows, "бор").map((r) => r.id)).toEqual(["8"]);
+    expect(filterUsers(rows, "8").map((r) => r.id)).toEqual(["8"]);
   });
 });

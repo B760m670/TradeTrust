@@ -519,3 +519,47 @@ button.card { text-align: left; width: 100%; }
 .demo-card { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); margin-bottom: 14px; }
 .demo-card strong { display: block; margin-bottom: 4px; }
 .demo-card p { margin: 0; line-height: 1.45; }
+
+/* админка владельца */
+.admin { display: flex; flex-direction: column; gap: 14px; }
+.admin-head { display: flex; align-items: baseline; justify-content: space-between; }
+.admin-head h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.admin-toast { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--toast-bg); border: 1px solid var(--border);
+  font-size: 14px; cursor: pointer; }
+.admin-note { margin: 0; line-height: 1.5; }
+.signups { display: flex; align-items: flex-end; gap: 3px; height: 110px; padding-top: 6px; }
+.signup-bar { flex: 1; border-radius: 4px 4px 2px 2px; background: var(--accent); min-height: 3px; }
+.signup-bar[data-empty] { background: var(--inset); }
+.signups-axis { display: flex; justify-content: space-between; margin-top: 6px; }
+.admin-search { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--inset); color: var(--text); font: inherit; font-size: 15px; }
+.user-list { display: flex; flex-direction: column; gap: 10px; }
+.user-card { padding: 0; overflow: hidden; }
+.user-card.blocked { opacity: 0.7; }
+.user-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.user-avatar { width: 38px; height: 38px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); font-weight: 800; }
+.user-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.user-main strong, .user-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-money { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 14px; flex-shrink: 0; }
+.user-details { padding: 0 16px 14px; border-top: 1px solid var(--border); }
+.user-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0; font-size: 14px; }
+.user-facts dt { color: var(--muted); }
+.user-facts dd { margin: 0; text-align: right; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.user-flags { padding: 0 16px 12px; }
+.sys-row { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; font-size: 14px; }
+.sys-row + .sys-row { border-top: 1px solid var(--border); }
+.sys-label { flex-shrink: 0; width: 120px; color: var(--muted); }
+.sys-value { flex: 1; min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.sys-error { margin: 8px 0 0; color: var(--down); overflow-wrap: anywhere; }
+.error-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.error-list li { display: flex; flex-direction: column; gap: 2px; }
+.error-list p { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.err-level { align-self: flex-start; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--amber); }
+.err-level.error, .err-level.critical { color: var(--down); }
+.broadcast { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--border);
+  background: var(--inset); color: var(--text); font: inherit; font-size: 15px; resize: vertical; margin-bottom: 12px; }
+.bottom-nav.six button span { font-size: 10px; }

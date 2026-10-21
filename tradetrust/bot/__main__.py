@@ -5,7 +5,7 @@ import logging
 import time
 from pathlib import Path
 
-from . import api
+from . import admin, api
 from .bybit import BybitClient, BybitExchange
 from .config import Config
 from .engine import Bot, next_bar_close
@@ -30,20 +30,26 @@ def build(cfg: Config) -> tuple[Bot, Users | None]:
     notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id, cfg.webapp_url) if cfg.telegram_token else None
     bot = Bot(cfg, exchange, store, notifier)
     users = None
-    if cfg.public_demo and notifier:
-        # демо-счета: цены основного рынка Bybit, общие для всех и из кэша
+    if notifier:
+        # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых
+        # открывает PUBLIC_DEMO, дальше — переключатель в админке
         market = CachedMarket(BybitExchange(BybitClient("mainnet", base_url=cfg.base_url or None)))
 
         def new_user(user_bot: Bot, total: int) -> None:
+            if not users.settings()["notify_new_users"]:
+                return  # по умолчанию — только строкой в ежедневной сводке и в админке
             p = user_bot.store.get("profile") or {}
             who = (p.get("name") or user_bot.cfg.telegram_chat_id) + (f" @{p['username']}" if p.get("username") else "")
-            bot.notify(f"👤 Новый демо-счёт: {who}. Всего {total} из {cfg.max_users}.")
+            bot.notify(f"👤 Новый демо-счёт: {who}. Всего {total}.")
 
-        users = Users(cfg, market, Path(cfg.db_path).resolve().parent / "users", notifier.for_chat, new_user)
+        users = Users(cfg, market, Path(cfg.db_path).resolve().parent / "users", notifier.for_chat, new_user,
+                      admin_store=store)
+        bot.report_extras.append(users.daily_line)
     if notifier:
         notifier.start(bot, users)
     # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
-    api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users)
+    api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users,
+              telegram=notifier)
     return bot, users
 
 
@@ -61,6 +67,7 @@ def tick(bots: list[Bot], candle_closed: bool) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger().addHandler(admin.ERRORS)  # последние ошибки — в админке
     cfg = Config.from_env()
     bot, users = build(cfg)
     if cfg.env != "paper":
@@ -74,7 +81,7 @@ def main() -> None:
     bot.on_candle_close()  # если сервер перезапускался — обработать последнюю закрытую свечу
     bot.record_equity()
     if users is not None:
-        tick(users.all(), True)
+        tick([b for b in users.all() if b.cfg.telegram_chat_id not in users.blocked()], True)
     next_close = next_bar_close()
     last_error, last_error_at = "", 0.0
     while True:
@@ -86,7 +93,8 @@ def main() -> None:
                 bot.on_candle_close()
             bot.maybe_daily_report()
             if users is not None:
-                tick(users.all(), closed)
+                blocked = users.blocked()
+                tick([b for b in users.all() if b.cfg.telegram_chat_id not in blocked], closed)
             if closed:
                 next_close = next_bar_close()
         except Exception as exc:

@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import webapp_auth
+from . import admin, webapp_auth
 from .config import MODES
 from .engine import CHART_INTERVALS, Bot
 
@@ -32,8 +32,18 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None):
+                 users=None, telegram=None):
     web_dir = web_dir.resolve()
+
+    def admin_data() -> dict:
+        rows = users.rows() if users is not None else []
+        return {
+            "available": users is not None,
+            "settings": users.settings() if users is not None else None,
+            "stats": users.stats(rows) if users is not None else None,
+            "users": rows,
+            "system": admin.system_info(owner_bot, telegram),
+        }
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
@@ -81,12 +91,35 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     bot = users.get(user["id"], user, create=True)
                     if bot is not None:
                         return bot
-                    self._send(403, {"error": "Демо-счета сейчас закончились — попробуйте позже."})
+                    self._send(403, {"error": users.closed_reason(user["id"])})
                     return None
             if header.startswith("Bearer ") and token and hmac.compare_digest(header[7:].strip(), token):
                 return owner_bot
             self._send(401, {"error": "unauthorized"})
             return None
+
+        def _admin_post(self, parts: list[str]) -> None:
+            if users is None:
+                return self._send(400, {"error": "демо-счета недоступны: не настроен Telegram"})
+            try:
+                if parts == ["settings"]:
+                    body = self._body()
+                    if not isinstance(body, dict):
+                        return self._send(400, {"error": "нужен объект с настройками"})
+                    return self._send(200, {"message": "Сохранено", "settings": users.update_settings(body)})
+                if parts == ["broadcast"]:
+                    n = users.broadcast(str(self._body().get("text", "")))
+                    return self._send(200, {"message": f"Отправляется {n} пользователям"})
+                if len(parts) == 3 and parts[0] == "users" and parts[2] in ("reset", "block", "unblock", "delete"):
+                    uid, action = parts[1], parts[2]
+                    msg = (users.reset(uid) if action == "reset" else users.delete(uid) if action == "delete"
+                           else users.set_blocked(uid, action == "block"))
+                    return self._send(200, {"message": msg})
+            except ValueError as exc:
+                return self._send(400, {"error": str(exc)})
+            except KeyError:
+                return self._send(404, {"error": "пользователь не найден"})
+            return self._send(404, {"error": "not found"})
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
@@ -103,7 +136,13 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 return
             try:
                 if url.path == "/api/status":
-                    return self._send(200, bot.status())
+                    status = bot.status()
+                    status["admin"] = bot is owner_bot  # админка — только владельцу
+                    return self._send(200, status)
+                if url.path == "/api/admin":
+                    if bot is not owner_bot:
+                        return self._send(403, {"error": "только для владельца"})
+                    return self._send(200, admin_data())
                 if url.path == "/api/portfolio":
                     return self._send(200, bot.portfolio())
                 if url.path == "/api/candles":
@@ -131,6 +170,10 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 return
             parts = urlparse(self.path).path.strip("/").split("/")  # api/<...>
             try:
+                if parts[:2] == ["api", "admin"]:
+                    if bot is not owner_bot:
+                        return self._send(403, {"error": "только для владельца"})
+                    return self._admin_post(parts[2:])
                 if parts[:2] == ["api", "proposals"] and len(parts) == 4 and parts[3] in ("confirm", "reject"):
                     msg = bot.confirm(parts[2]) if parts[3] == "confirm" else bot.reject(parts[2])
                     return self._send(200, {"message": msg})
@@ -166,8 +209,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR, users=None) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir, users))
+          web_dir: Path = WEB_DIR, users=None, telegram=None) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port),
+                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

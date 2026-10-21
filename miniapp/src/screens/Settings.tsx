@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { api, type EditableSettings, type NumericSetting, type Status } from "../api";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
+import { Stepper, Switch } from "../components/controls";
 import { CheckIcon } from "../components/icons";
 import { Button, Card } from "../components/ui";
 import { usd } from "../format";
-import { changedSettings, localTime, stepValue } from "../logic";
+import { changedSettings, localTime } from "../logic";
 import { confirmAction, haptic } from "../telegram";
 import { THEME_OPTIONS, useTheme } from "../theme";
 
@@ -27,27 +28,6 @@ const FIELDS: Field[] = [
 
 const num = (x: number) => x.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 const OFFSET_MIN = -new Date().getTimezoneOffset(); // часовой пояс телефона или компьютера
-
-function Stepper({ value, min, max, step, unit, label, onChange, format }: {
-  value: number; min: number; max: number; step: number; unit: string; label: string; onChange: (v: number) => void;
-  format?: (v: number) => string;
-}) {
-  const move = (d: number) => { haptic(); onChange(stepValue(value, d, step, min, max)); };
-  return (
-    <div className="stepper" role="group" aria-label={label}>
-      <button aria-label="Меньше" disabled={value <= min} onClick={() => move(-1)}>−</button>
-      <output aria-live="polite">{format ? format(value) : `${num(value)}${unit}`}</output>
-      <button aria-label="Больше" disabled={value >= max} onClick={() => move(1)}>+</button>
-    </div>
-  );
-}
-
-function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: (v: boolean) => void }) {
-  return (
-    <button role="switch" aria-checked={checked} aria-label={label} className="switch"
-      onClick={() => { haptic(); onChange(!checked); }} />
-  );
-}
 
 function CapitalInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const [text, setText] = useState(value ? String(value) : "0");

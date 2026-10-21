@@ -66,6 +66,10 @@ class Store:
         with self.lock:
             self.db.executescript(SCHEMA)
 
+    def close(self) -> None:
+        with self.lock:
+            self.db.close()
+
     def _all(self, sql: str, *args) -> list[sqlite3.Row]:
         with self.lock:
             return self.db.execute(sql, args).fetchall()

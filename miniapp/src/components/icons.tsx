@@ -32,3 +32,4 @@ export const CheckIcon = (p: P) => <Icon {...p}><polyline points="20 6 9 17 4 12
 export const WalletIcon = (p: P) => (
   <Icon {...p}><path d="M20 7H5a2 2 0 0 1 0-4h13v4" /><path d="M3 5v14a2 2 0 0 0 2 2h15V7" /><circle cx="16" cy="14" r="1.5" /></Icon>
 );
+export const ShieldIcon = (p: P) => <Icon {...p}><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z" /><polyline points="9 12 11 14 15 10" /></Icon>;

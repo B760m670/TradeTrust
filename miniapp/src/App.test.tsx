@@ -35,6 +35,24 @@ class FakeWebSocket {
   push(topic: string, data: unknown) { this.onmessage?.({ data: JSON.stringify({ topic, data }) }); }
 }
 
+const now = Math.floor(Date.now() / 1000);
+const ADMIN = {
+  available: true,
+  settings: { registration_open: true, notify_new_users: false, max_users: 100, demo_start_usdt: 1000 },
+  stats: { total: 2, new_day: 1, new_week: 2, active_day: 1, active_week: 2, profitable: 1, losing: 1, blocked: 0,
+    signups: Array.from({ length: 30 }, (_, i) => ({ day: (Math.floor(now / 86400) - 29 + i) * 86400, count: i === 29 ? 1 : 0 })) },
+  users: [
+    { id: "7", name: "Анна", username: "anna", joined_at: now - 3600, last_seen: now - 600, equity: 1012.5, start: 1000,
+      pnl_pct: 1.25, positions: 2, trades: 3, wins: 2, mode: "auto", paused: null, blocked: false },
+    { id: "8", name: "Борис", username: "", joined_at: now - 90000, last_seen: now - 90000, equity: 990, start: 1000,
+      pnl_pct: -1, positions: 0, trades: 1, wins: 0, mode: "auto", paused: null, blocked: false },
+  ],
+  system: { version: "abc1234", built_at: "", started_at: now - 7200, now, env: "demo", mode: "auto", paused: null,
+    last_scan: now - 1800, next_scan: now + 3600, bybit: { ok_at: now - 30, error_at: null, error: "" },
+    telegram: { ok_at: now - 20, error: "" }, memory: { process_mb: 120, total_mb: 1800, available_mb: 900 },
+    disk: { total_gb: 20, free_gb: 12, data_mb: 3.4 }, errors: [] },
+};
+
 type Call = { url: string; method: string; auth: string | null; body?: unknown };
 let calls: Call[];
 
@@ -64,6 +82,7 @@ beforeEach(() => {
       body: init.body ? JSON.parse(init.body as string) : undefined });
     const body = url === "/api/status" ? status
       : url === "/api/portfolio" ? PORTFOLIO
+      : url === "/api/admin" ? ADMIN
       : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
         time: [], open: [], high: [], low: [], close: [], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
@@ -183,6 +202,36 @@ describe("mini app", () => {
       expect(screen.getAllByText("Демо-счёт").length).toBeGreaterThan(0);
     } finally {
       Object.assign(status, { account: "owner" });
+    }
+  });
+
+  it("shows the admin panel only to the owner", async () => {
+    Object.assign(status, { admin: false });
+    await renderApp();
+    await screen.findByRole("button", { name: "Настройки" });
+    expect(screen.queryByRole("button", { name: "Админ" })).toBeNull();
+    cleanup();
+    vi.resetModules();
+    Object.assign(status, { admin: true });
+    try {
+      await renderApp();
+      fireEvent.click(await screen.findByRole("button", { name: "Админ" }));
+      expect(await screen.findByText("Пользователей")).toBeTruthy();
+      fireEvent.click(screen.getByRole("radio", { name: "Люди" }));
+      fireEvent.change(screen.getByLabelText("Поиск пользователей"), { target: { value: "@anna" } });
+      expect(screen.getByText("Анна")).toBeTruthy();
+      expect(screen.queryByText("Борис")).toBeNull();
+      fireEvent.click(screen.getByText("Анна"));
+      fireEvent.click(screen.getByRole("button", { name: "Заблокировать" }));
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/admin/users/7/block" && c.method === "POST")).toBe(true));
+      fireEvent.click(screen.getByRole("radio", { name: "Система" }));
+      expect(screen.getByText(/abc1234/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("radio", { name: "Опции" }));
+      fireEvent.click(screen.getByRole("switch", { name: "Регистрация новых" }));
+      fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/admin/settings")?.body).toEqual({ registration_open: false }));
+    } finally {
+      Object.assign(status, { admin: false });
     }
   });
 
