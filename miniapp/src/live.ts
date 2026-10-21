@@ -36,6 +36,8 @@ export class LiveFeed {
   private retry: ReturnType<typeof setTimeout> | undefined;
   private attempts = 0;
   private closed = false;
+  /** Задержка последнего сообщения: сейчас минус время биржи (мс); null — сообщений ещё не было. */
+  lag: number | null = null;
 
   constructor(private url: string) {}
 
@@ -77,13 +79,14 @@ export class LiveFeed {
       this.ping = setInterval(() => ws.readyState === 1 && ws.send(JSON.stringify({ op: "ping" })), 20_000);
     };
     ws.onmessage = (e) => {
-      let msg: { topic?: string; data?: unknown };
+      let msg: { topic?: string; data?: unknown; ts?: number };
       try {
         msg = JSON.parse(String(e.data));
       } catch {
         return;
       }
       if (!msg.topic || !msg.data) return;
+      if (typeof msg.ts === "number") this.lag = Math.max(0, Date.now() - msg.ts);
       // сделки приходят пачкой — каждая важна; у цен и свечей последняя и есть актуальная
       const items = (Array.isArray(msg.data) ? msg.data : [msg.data]) as Record<string, unknown>[];
       if (!items.length) return;
@@ -119,7 +122,9 @@ export const LiveContext = createContext<LiveFeed | null>(null);
 
 export const num = (v: unknown): number => (typeof v === "string" || typeof v === "number" ? Number(v) : NaN);
 
-const FLUSH_MS = 1000; // биржа шлёт цены много раз в секунду — экрану хватает раза в секунду
+// Bybit присылает цены спота много раз в секунду; экран обновляем 5 раз в секунду — глазу это непрерывно,
+// а телефон не перерисовывает всё на каждое сообщение
+const FLUSH_MS = 200;
 
 /** Текущие цены монет и изменение за сутки. Пустой объект, пока поток не ответил. */
 export function useTickers(coins: string[]): Record<string, Ticker> {
@@ -177,3 +182,15 @@ export function useLiveCandle(coin: string, code = "240"): LiveCandle | null {
 
 export const TickersContext = createContext<Record<string, Ticker>>({});
 export const useLiveTickers = () => useContext(TickersContext);
+
+/** Задержка потока цен с биржи до телефона, мс; обновляется раз в секунду. null — поток ещё не ответил. */
+export function useFeedLag(): number | null {
+  const feed = useContext(LiveContext);
+  const [lag, setLag] = useState<number | null>(feed?.lag ?? null);
+  useEffect(() => {
+    if (!feed) return;
+    const t = setInterval(() => setLag(feed.lag), 1000);
+    return () => clearInterval(t);
+  }, [feed]);
+  return lag;
+}
