@@ -828,6 +828,7 @@ h3.section-title { margin: 22px 0 10px; }
 .chart-switches button { height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 7px; background: transparent;
   color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
 .chart-switches button.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
-.chart-area { height: 290px; }
-.chart-card.tall .chart-area { height: 400px; }
+.chart-area { height: 230px; }
+.chart-card.tall .chart-area { height: 380px; }
 .live-badge.slow { background: var(--amber-soft); color: var(--amber); }
+.app.narrow .chart-card .legend-tf { display: none; } /* на телефоне подпись не нужна, место — графику */
