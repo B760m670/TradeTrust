@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type ChartData, type Status } from "../api";
 import { useLiveCandle } from "../live";
+import { utcOffsetLabel } from "../logic";
 import { haptic, prefs } from "../telegram";
 import { CandleChart, useChartColors } from "./CandleChart";
 import { TickChart } from "./TickChart";
@@ -12,6 +13,7 @@ const TIMEFRAMES: [string, string, string][] = [
   ["4h", "4ч", "240"], ["1d", "1Д", "D"], ["1w", "1Н", "W"],
 ];
 const TF_KEY = "chart_tf";
+const ZONE = utcOffsetLabel(-new Date().getTimezoneOffset()); // часовой пояс телефона
 const BOT_TF = "4h";
 
 function useTimeframe(): [string, (tf: string) => void] {
@@ -78,6 +80,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
         {pos && !ticks && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп</span>}
         <span className="legend-tf">
           {ticks ? "свеча — 1 секунда, из сделок Bybit" : `свечи ${label}`}{tf !== BOT_TF && " · бот решает по 4ч"}
+          {` · время ${ZONE}`}
         </span>
       </div>
     </Card>

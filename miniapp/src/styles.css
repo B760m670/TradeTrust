@@ -461,6 +461,12 @@ button.card { text-align: left; width: 100%; }
   transition: opacity 0.2s, transform 0.12s; }
 .zoom button:hover { opacity: 1; }
 .zoom button:active { transform: scale(0.9); }
+.feed-state { position: absolute; left: 112px; top: 13px; z-index: 2; display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px; background: var(--toast-bg); border: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.feed-state i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.feed-state.live i { background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 25%, transparent); }
+.feed-state.quiet i { background: var(--amber); }
 .tick-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px;
   text-align: center; font-size: 13px; color: var(--faint); pointer-events: none; }
 

@@ -6,7 +6,7 @@ import { crosshairTime, tickMark } from "./components/chartTime";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
   allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
-  addTrade, fillSeconds, MAX_SECONDS, type SecondBar,
+  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -234,5 +234,17 @@ describe("chart time", () => {
     expect(tickMark(ts as UTCTimestamp, TickMarkType.TimeWithSeconds)).toBe(`${hm}:05`);
     expect(crosshairTime(true, true)(ts as UTCTimestamp)).toMatch(new RegExp(`${hm}:05$`));
     expect(crosshairTime(false)(ts as UTCTimestamp)).not.toMatch(/:/);
+  });
+});
+
+describe("live feed state", () => {
+  it("shows the delay, quiet market and the phone's time zone", () => {
+    expect(feedState([], null, 0).kind).toBe("wait");
+    expect(feedState([120, 300, 250], 1000, 2000)).toEqual({ kind: "live", text: "задержка 0,3 с" });
+    expect(feedState([30], 1000, 1500).text).toBe("задержка <0,1 с");
+    expect(feedState([200], 1000, 13_500)).toEqual({ kind: "quiet", text: "сделок нет 12 с" });
+    expect(utcOffsetLabel(180)).toBe("UTC+3");
+    expect(utcOffsetLabel(330)).toBe("UTC+5:30");
+    expect(utcOffsetLabel(-240)).toBe("UTC−4");
   });
 });

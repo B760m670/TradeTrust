@@ -285,3 +285,22 @@ export function fillSeconds(bars: SecondBar[], upTo: number): SecondBar[] {
   trim(bars);
   return added;
 }
+
+/** Часовой пояс телефона для подписей: «UTC+3», «UTC+5:30», «UTC−4». */
+export function utcOffsetLabel(offsetMin: number): string {
+  const sign = offsetMin < 0 ? "−" : "+";
+  const a = Math.abs(offsetMin);
+  return `UTC${sign}${Math.floor(a / 60)}${a % 60 ? `:${String(a % 60).padStart(2, "0")}` : ""}`;
+}
+
+/** Состояние живого потока сделок для подписи на графике. delays — недавние задержки, мс. */
+export function feedState(delays: number[], lastTradeAt: number | null, now: number):
+  { kind: "wait" | "live" | "quiet"; text: string } {
+  if (lastTradeAt == null) return { kind: "wait", text: "ждём сделок" };
+  const quiet = Math.floor((now - lastTradeAt) / 1000);
+  if (quiet >= 10) return { kind: "quiet", text: `сделок нет ${quiet} с` };
+  const sorted = [...delays].sort((a, b) => a - b);
+  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const sec = Math.max(0, median) / 1000;
+  return { kind: "live", text: `задержка ${sec < 0.1 ? "<0,1" : sec.toFixed(1).replace(".", ",")} с` };
+}

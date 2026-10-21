@@ -2,11 +2,11 @@ import {
   CandlestickSeries, ColorType, HistogramSeries, LineStyle, createChart,
   type IChartApi, type ISeriesApi, type UTCTimestamp,
 } from "lightweight-charts";
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { api, type MarketTrade } from "../api";
 import { chartPrice } from "../format";
 import { LiveContext } from "../live";
-import { addTrade, fillSeconds, type SecondBar } from "../logic";
+import { addTrade, feedState, fillSeconds, type SecondBar } from "../logic";
 import { useTheme } from "../theme";
 import { ZoomControls, useChartColors } from "./CandleChart";
 import { crosshairTime, tickMark } from "./chartTime";
@@ -29,6 +29,10 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
   const shown = useRef(0); // последняя секунда на графике
   const { theme } = useTheme();
   const colors = useChartColors();
+  // доказательство, что это «прямо сейчас»: через сколько после сделки на бирже она дошла до телефона
+  const delays = useRef<number[]>([]);
+  const lastTradeAt = useRef<number | null>(null);
+  const [live, setLive] = useState(() => feedState([], null, Date.now()));
 
   const volBar = (b: SecondBar) => ({
     time: b.time as UTCTimestamp, value: b.volume,
@@ -98,6 +102,8 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
   useEffect(() => {
     let alive = true;
     bars.current = [];
+    delays.current = [];
+    lastTradeAt.current = null;
     redraw();
     let seeded = false;
     let pending: MarketTrade[] = [];
@@ -130,9 +136,12 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
     const off = feed?.subscribe(`publicTrade.${coin}USDT`, (d) => {
       const t = { t: num(d.T), p: num(d.p), v: num(d.v) };
       if (![t.t, t.p, t.v].every(Number.isFinite)) return;
-      const sample = t.t - Date.now();
+      const now = Date.now();
+      const sample = t.t - now;
       skew = first ? sample : skew * 0.9 + sample * 0.1;
       first = false;
+      delays.current = [...delays.current.slice(-29), now - t.t];
+      lastTradeAt.current = now;
       pending.push(t);
     });
     const flush = setInterval(() => {
@@ -145,6 +154,7 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
     }, FLUSH_MS);
     // время идёт и без сделок: прошедшие секунды без сделок — ровные свечи
     const tick = setInterval(() => {
+      setLive(feedState(delays.current, lastTradeAt.current, Date.now()));
       if (!seeded) return;
       const added = fillSeconds(bars.current, Math.floor((Date.now() + skew) / 1000) - 1);
       if (!added.length) return;
@@ -180,6 +190,10 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
     <div className="chart-wrap">
       <div ref={box} className="chart" data-testid="tick-chart" />
       <ZoomControls onZoom={zoom} onReset={showRecent} />
+      <span className={`feed-state ${live.kind}`}
+        title="Время от сделки на бирже до вашего телефона (по часам биржи и телефона)">
+        <i aria-hidden="true" />{live.text}
+      </span>
     </div>
   );
 }
