@@ -49,6 +49,9 @@ class Config:
     domain: str = ""                   # адрес сервера для мини-приложения: https://<domain>
     db_path: str = "bot.db"
     paper_start_usdt: float = 1000.0
+    public_demo: bool = True           # любой пользователь Telegram получает свой демо-счёт (бумажный, 1000 USDT)
+    max_users: int = 100               # сколько демо-счетов максимум (память сервера)
+    account: str = "owner"             # owner — владелец бота; demo — демо-счёт пользователя
 
     @property
     def webapp_url(self) -> str:
@@ -86,6 +89,8 @@ class Config:
             domain=_env("DOMAIN").removeprefix("https://").strip("/"),
             db_path=_env("DB_PATH", "bot.db"),
             paper_start_usdt=_float("PAPER_START_USDT", 1000.0),
+            public_demo=_env("PUBLIC_DEMO", "1").lower() in ("1", "true", "yes", "да"),
+            max_users=int(_float("MAX_USERS", 100)),
         )
         cfg.validate()
         return cfg

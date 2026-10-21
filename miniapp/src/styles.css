@@ -514,3 +514,8 @@ button.card { text-align: left; width: 100%; }
   .big-int { font-size: 40px; }
   .segmented button { font-size: 13px; }
 }
+
+/* демо-счёт пользователя */
+.demo-card { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); margin-bottom: 14px; }
+.demo-card strong { display: block; margin-bottom: 4px; }
+.demo-card p { margin: 0; line-height: 1.45; }
