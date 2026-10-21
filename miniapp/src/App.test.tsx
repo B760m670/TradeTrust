@@ -53,7 +53,7 @@ const ADMIN = {
     disk: { total_gb: 20, free_gb: 12, data_mb: 3.4 }, errors: [] },
 };
 
-type Call = { url: string; method: string; auth: string | null; body?: unknown };
+type Call = { url: string; method: string; auth: string | null; body?: unknown; account?: string };
 let calls: Call[];
 
 function setWidth(wide: boolean) {
@@ -78,8 +78,10 @@ function installTelegram(initData: string) {
 beforeEach(() => {
   calls = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
-    calls.push({ url, method: init.method ?? "GET", auth: new Headers(init.headers).get("Authorization"),
-      body: init.body ? JSON.parse(init.body as string) : undefined });
+    const headers = new Headers(init.headers);
+    calls.push({ url, method: init.method ?? "GET", auth: headers.get("Authorization"),
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+      ...(headers.get("X-Account") ? { account: headers.get("X-Account")! } : {}) });
     const body = url === "/api/status" ? status
       : url === "/api/portfolio" ? PORTFOLIO
       : url === "/api/admin" ? ADMIN
@@ -222,6 +224,45 @@ describe("mini app", () => {
       expect(screen.getAllByText("Демо-счёт").length).toBeGreaterThan(0);
     } finally {
       Object.assign(status, { account: "owner" });
+    }
+  });
+
+  it("switches the owner between the demo and the real account", async () => {
+    const accounts = { active: "main", real_configured: true, real_error: "", list: [
+      { id: "main", label: "Демо-счёт Bybit", env: "demo", real: false },
+      { id: "real", label: "Реальный счёт Bybit", env: "mainnet", real: true },
+    ] };
+    Object.assign(status, { accounts });
+    const confirm = vi.fn((_: string, cb: (ok: boolean) => void) => cb(true));
+    try {
+      await renderApp();
+      window.Telegram!.WebApp.showConfirm = confirm;
+      fireEvent.click(await screen.findByRole("button", { name: /Счёт: Демо-счёт Bybit/ }));
+      const sheet = within(await screen.findByRole("dialog", { name: "Счёт" }));
+      fireEvent.click(sheet.getByRole("button", { name: /Реальный счёт Bybit/ }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/account")?.body).toEqual({ account: "real" }));
+      expect(confirm.mock.calls[0][0]).toMatch(/настоящие деньги/);
+      // каждое действие говорит серверу, какой счёт на экране, — на другом счёте оно не выполнится
+      fireEvent.click(await screen.findByText("Купить"));
+      await waitFor(() => expect(calls.find((c) => c.url.includes("/confirm"))?.account).toBe("main"));
+    } finally {
+      Object.assign(status, { accounts: undefined });
+    }
+  });
+
+  it("explains how to connect a real account and lets the owner turn the bot on", async () => {
+    Object.assign(status, { enabled: false, accounts: { active: "main", real_configured: false, real_error: "",
+      list: [{ id: "main", label: "Демо-счёт Bybit", env: "demo", real: false }] } });
+    try {
+      await renderApp();
+      expect(await screen.findByText("Бот выключен")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Включить" }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/bot")?.body).toEqual({ enabled: true }));
+      fireEvent.click(screen.getByRole("button", { name: /Счёт: Демо-счёт Bybit/ }));
+      expect(await screen.findByText("Реальный счёт не подключён")).toBeTruthy();
+      expect(screen.getByText("BYBIT_REAL_API_KEY")).toBeTruthy();
+    } finally {
+      Object.assign(status, { enabled: undefined, accounts: undefined });
     }
   });
 

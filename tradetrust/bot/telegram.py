@@ -11,6 +11,7 @@ import time
 
 import requests
 
+from .accounts import LABELS as ACCOUNT_LABELS
 from .config import MODES
 from .engine import MODE_NAMES, Bot, fmt
 
@@ -28,7 +29,7 @@ HELP = """Команды:
 /close BTC — закрыть позицию по рынку
 /closeall — закрыть все позиции"""
 
-OWNER_HELP = HELP + "\n/admin — админка\n/users — демо-счета пользователей"
+OWNER_HELP = HELP + "\n/account — какой счёт: демо или реальный\n/admin — админка\n/users — демо-счета пользователей"
 NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start."
 
 
@@ -41,6 +42,7 @@ class Telegram:
         self.http = session or requests.Session()
         self.bot: Bot | None = None
         self.users = None  # Users — демо-счета, если включены
+        self.accounts = None  # Accounts — счета владельца: основной и реальный
         self.offset = 0
         self.ok_at: float | None = None  # для админки: когда Telegram последний раз ответил
         self.error = ""
@@ -92,9 +94,10 @@ class Telegram:
             if self.users is not None:  # кнопка «Открыть» у всех, кто пишет боту
                 self._call("setChatMenuButton", menu_button=button)
 
-    def start(self, bot: Bot, users=None) -> threading.Thread:
+    def start(self, bot: Bot, users=None, accounts=None) -> threading.Thread:
         self.bot = bot
         self.users = users
+        self.accounts = accounts
         try:
             self.setup()
         except Exception:
@@ -120,7 +123,7 @@ class Telegram:
     def bot_for(self, chat_id: str, profile: dict | None = None, create: bool = False) -> Bot | None:
         """Чей счёт: владельца или демо-счёт пользователя (create — открыть, если его нет)."""
         if chat_id == self.chat_id:
-            return self.bot
+            return self.accounts.active() if self.accounts else self.bot
         if self.users is None:
             return None
         return self.users.get(chat_id, profile, create=create)
@@ -132,6 +135,9 @@ class Telegram:
             bot = self.bot_for(chat)
             if bot is None:
                 return
+            pid = q.get("data", "").partition(":")[2]
+            if chat == self.chat_id and self.accounts and (owner := self.accounts.by_proposal(pid)):
+                bot = owner  # кнопка под предложением — того счёта, с которого оно пришло
             answer = self.on_button(q.get("data", ""), bot)
             self._call("answerCallbackQuery", callback_query_id=q["id"], text=answer[:190])
             return
@@ -182,6 +188,8 @@ class Telegram:
                 self.send(text, buttons, chat_id=chat)
                 return None
             return text if cmd != "/app" else "Мини-приложение недоступно: не задан DOMAIN в .env"
+        if cmd == "/account" and owner:
+            return self.account_text(args[0] if args else "")
         if cmd == "/users" and owner:
             return self.users.summary() if self.users is not None else "Демо-счета выключены (PUBLIC_DEMO=0)."
         if cmd == "/status":
@@ -220,10 +228,23 @@ class Telegram:
             return None
         return "Не понял команду.\n\n" + (OWNER_HELP if owner else HELP)
 
+    def account_text(self, name: str) -> str:
+        acc = self.accounts
+        if acc is None or acc.real is None:
+            why = f"\nНе подключился: {acc.real_error}" if acc and acc.real_error else ""
+            return ("Реальный счёт не подключён: добавьте ключ Bybit в .env "
+                    "(BYBIT_REAL_API_KEY и BYBIT_REAL_API_SECRET) и перезапустите бота." + why)
+        if name in ("demo", "main", "демо"):
+            return acc.switch("main") + ". Команды и приложение — по нему."
+        if name in ("real", "реальный"):
+            return acc.switch("real") + ". ⚠️ Сделки здесь — настоящие деньги."
+        return f"Сейчас: {acc.label(acc.active_id)}. Переключить: /account demo | real"
+
     def status_text(self, bot: Bot | None = None) -> str:
         s = (bot or self.bot).status()
         eq = s["equity"]
-        lines = [f"Счёт: {s['env']} · режим: {MODE_NAMES[s['mode']]}" + (f" · ПАУЗА ({s['paused']})" if s["paused"] else ""),
+        bot_state = "" if s.get("enabled", True) else " · бот выключен"
+        lines = [f"Счёт: {'Демо-счёт' if s['account'] == 'demo' else ACCOUNT_LABELS.get(s['env'], s['env'])}{bot_state} · режим: {MODE_NAMES[s['mode']]}" + (f" · ПАУЗА ({s['paused']})" if s["paused"] else ""),
                  f"Капитал: {eq['total']:,.2f} USDT, свободно {eq['free']:,.2f}"]
         for p in s["positions"]:
             lines.append(f"• {p['coin']}: {p['qty']} по {fmt(p['entry'])}, сейчас {fmt(p['price'])}, "

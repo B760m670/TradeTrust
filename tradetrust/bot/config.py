@@ -24,6 +24,9 @@ class Config:
     api_key: str = ""
     api_secret: str = ""
     base_url: str = ""                 # свой адрес API (например, региональный), иначе по env
+    real_api_key: str = ""             # второй счёт владельца — реальный Bybit (mainnet), переключается в приложении
+    real_api_secret: str = ""
+    real_base_url: str = ""
     mode: str = "confirm"              # signals — только сигналы, confirm — сделка после подтверждения, auto — сам
     coins: list[str] = field(default_factory=lambda: list(COINS))
     risk_pct: float = 0.3              # маленький риск на все монеты — см. scripts/portfolio_study.py
@@ -51,7 +54,13 @@ class Config:
     paper_start_usdt: float = 1000.0
     public_demo: bool = True           # любой пользователь Telegram получает свой демо-счёт (бумажный, 1000 USDT)
     max_users: int = 100               # сколько демо-счетов максимум (память сервера)
-    account: str = "owner"             # owner — владелец бота; demo — демо-счёт пользователя
+    account: str = "owner"             # owner — основной счёт владельца; real — его реальный счёт; demo — пользователя
+    bot_enabled: bool = True           # бот торгует на этом счёте; на реальном по умолчанию выключен
+
+    @property
+    def has_real(self) -> bool:
+        """Есть второй, реальный счёт (если основной и так mainnet — переключать не на что)."""
+        return bool(self.real_api_key and self.real_api_secret) and self.env != "mainnet"
 
     @property
     def webapp_url(self) -> str:
@@ -64,6 +73,9 @@ class Config:
             api_key=_env("BYBIT_API_KEY"),
             api_secret=_env("BYBIT_API_SECRET"),
             base_url=_env("BYBIT_BASE_URL"),
+            real_api_key=_env("BYBIT_REAL_API_KEY"),
+            real_api_secret=_env("BYBIT_REAL_API_SECRET"),
+            real_base_url=_env("BYBIT_REAL_BASE_URL"),
             mode=_env("MODE", "confirm").lower(),
             coins=[c.strip().upper() for c in _env("COINS", ",".join(COINS)).split(",") if c.strip()],
             risk_pct=_float("RISK_PCT", 0.3),
@@ -102,6 +114,8 @@ class Config:
             raise ValueError(f"MODE должен быть одним из {MODES}")
         if self.env != "paper" and not (self.api_key and self.api_secret):
             raise ValueError("Для торговли на Bybit нужны BYBIT_API_KEY и BYBIT_API_SECRET")
+        if bool(self.real_api_key) != bool(self.real_api_secret):
+            raise ValueError("Для реального счёта нужны оба: BYBIT_REAL_API_KEY и BYBIT_REAL_API_SECRET")
         if not 0 < self.risk_pct <= 5:
             raise ValueError("RISK_PCT должен быть в диапазоне (0, 5]")
         if not 2 <= self.ema_fast < self.ema_slow:

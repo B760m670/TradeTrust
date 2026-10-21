@@ -198,6 +198,9 @@ class Bot:
         with self.lock:
             before = self.settings()
             values = check_settings(changes, before, self.defaults["coins"])
+            if self.cfg.account == "real" and self.enabled and values.get("capital_usdt", 1) <= 0:
+                raise ValueError("на реальном счёте у включённого бота должен быть задан капитал — "
+                                 "иначе он будет торговать всем балансом")
             self._apply(values)
             after = self.settings()
             self.store.set("settings", {k: v for k, v in after.items() if v != self.defaults[k]})
@@ -235,6 +238,31 @@ class Bot:
     def resume(self) -> None:
         self.store.set("paused", None)
         self.store.log("пауза снята")
+
+    @property
+    def enabled(self) -> bool:
+        """Бот торгует на этом счёте. Выключенный не открывает сделок и не шлёт сигналов,
+        но уже открытые позиции ведёт до конца: стоп и выход по тренду."""
+        return self.store.get("enabled", self.cfg.bot_enabled)
+
+    def set_enabled(self, on: bool) -> str:
+        if on == self.enabled:
+            return "Бот уже включён" if on else "Бот уже выключен"
+        if on and self.cfg.account == "real" and self.cfg.capital_usdt <= 0:
+            raise ValueError("сначала задайте капитал бота — сколько USDT он может использовать на реальном счёте")
+        self.store.set("enabled", on)
+        if not on:
+            for p in self.store.pending_proposals():
+                if self.store.claim_proposal(p.id, "rejected"):
+                    self._edit(p, f"❌ {p.coin}: бот выключен")
+        if on:
+            cap = f", капитал {self.cfg.capital_usdt:,.0f} USDT" if self.cfg.capital_usdt > 0 else ""
+            self.notify(f"▶️ Бот включён: режим «{MODE_NAMES[self.mode]}»{cap}.")
+            return "Бот включён"
+        n = len(self.store.positions())
+        tail = f" Открытые позиции ({n}) веду до конца: стоп и выход по тренду." if n else ""
+        self.notify("⏹ Бот выключен: новых сделок и сигналов не будет." + tail)
+        return "Бот выключен"
 
     def notify(self, text: str, buttons=None) -> int | None:
         self.store.log(text)
@@ -364,6 +392,10 @@ class Bot:
                 self.close(coin, "signal")
 
             self.expire_proposals()
+            if not self.enabled:  # выключенный бот только ведёт открытые позиции
+                self.record_equity()
+                self.record_scan(signals, bar, [], exits)
+                return
             if self.mode != "signals" and not self.paused and self.daily_loss_hit():
                 self.pause("дневной лимит убытка")
                 self.notify(f"⛔ Дневной убыток достиг {self.cfg.daily_loss_limit_pct}% — новые сделки на паузе. "
@@ -474,7 +506,7 @@ class Bot:
         if b and "error" not in b:
             lines.append(f"Биткоин {'выше' if b['ok'] else 'ниже'} {b['days']}-дневной средней — "
                          f"{'новые входы разрешены' if b['ok'] else 'новые входы на паузе'}")
-        state = f"пауза ({self.paused})" if self.paused else "работает"
+        state = "выключен" if not self.enabled else f"пауза ({self.paused})" if self.paused else "работает"
         lines.append(f"Режим: {MODE_NAMES.get(self.mode, self.mode)}, бот {state}")
         for extra in self.report_extras:
             try:
@@ -492,6 +524,8 @@ class Bot:
         day, hour = time.strftime("%Y-%m-%d", time.gmtime(ts)), time.gmtime(ts).tm_hour
         if not self.cfg.daily_report or hour != self.cfg.report_hour_utc or self.store.get("report_day") == day:
             return False
+        if not self.enabled and not self.store.positions():
+            return False  # бот выключен и ничего не ведёт — сводка не нужна
         self.store.set("report_day", day)
         try:
             self.notifier.send(self.daily_report_text())  # в журнал событий сводку не пишем
@@ -554,6 +588,9 @@ class Bot:
                 return "Предложение истекло"
             if not self.store.claim_proposal(pid, "confirmed"):
                 return f"Уже обработано: {p.status}"
+            if not self.enabled:
+                self.store.set_proposal_status(pid, "failed")
+                return "Бот выключен"
             if self.paused:
                 self.store.set_proposal_status(pid, "failed")
                 return f"Бот на паузе: {self.paused}"
@@ -758,6 +795,7 @@ class Bot:
                               "pnl_usdt": (price - p.entry) * p.qty, "opened_at": p.opened_at})
         return {
             "env": self.cfg.env, "mode": self.mode, "paused": self.paused, "account": self.cfg.account,
+            "enabled": self.enabled,
             "equity": {k: v for k, v in eq.items() if k != "prices"},
             "positions": positions,
             "proposals": [p.__dict__ for p in self.store.pending_proposals()],

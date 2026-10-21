@@ -32,8 +32,12 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None, telegram=None):
+                 users=None, telegram=None, accounts=None):
+    """accounts — счета владельца (основной и реальный): владельцу отвечает тот, что сейчас выбран."""
     web_dir = web_dir.resolve()
+
+    def owner_now() -> Bot:
+        return accounts.active() if accounts is not None else owner_bot
 
     def admin_data() -> dict:
         rows = users.rows() if users is not None else []
@@ -80,13 +84,16 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
             self.end_headers()
             self.wfile.write(body)
 
+        owner = False  # спрашивает владелец — ему админка и переключение счетов
+
         def _bot(self) -> Bot | None:
             """Счёт того, кто спрашивает; None — ответ 401/403 уже отправлен."""
             header = self.headers.get("Authorization", "")
             if header.startswith("tma "):
                 user = webapp_auth.validate(header[4:], tg_token)
                 if user and str(user["id"]) == str(owner_id):
-                    return owner_bot
+                    self.owner = True
+                    return owner_now()
                 if user and users is not None:
                     bot = users.get(user["id"], user, create=True)
                     if bot is not None:
@@ -94,7 +101,8 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     self._send(403, {"error": users.closed_reason(user["id"])})
                     return None
             if header.startswith("Bearer ") and token and hmac.compare_digest(header[7:].strip(), token):
-                return owner_bot
+                self.owner = True
+                return owner_now()
             self._send(401, {"error": "unauthorized"})
             return None
 
@@ -137,10 +145,12 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
             try:
                 if url.path == "/api/status":
                     status = bot.status()
-                    status["admin"] = bot is owner_bot  # админка — только владельцу
+                    status["admin"] = self.owner  # админка — только владельцу
+                    if self.owner and accounts is not None:
+                        status["accounts"] = accounts.info()
                     return self._send(200, status)
                 if url.path == "/api/admin":
-                    if bot is not owner_bot:
+                    if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._send(200, admin_data())
                 if url.path == "/api/portfolio":
@@ -169,11 +179,33 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
             if bot is None:
                 return
             parts = urlparse(self.path).path.strip("/").split("/")  # api/<...>
+            if self.owner and accounts is not None and parts[:2] not in (["api", "account"], ["api", "admin"]):
+                # приложение говорит, на каком счёте нажата кнопка: если счёт успели переключить
+                # (например, из Telegram), действие не выполняется — на реальном счёте только так
+                seen = self.headers.get("X-Account", "")
+                if (seen or accounts.active_id == "real") and seen != accounts.active_id:
+                    return self._send(409, {"error": f"Счёт переключён на «{accounts.label(accounts.active_id)}» — "
+                                                     "обновите экран и повторите"})
             try:
                 if parts[:2] == ["api", "admin"]:
-                    if bot is not owner_bot:
+                    if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._admin_post(parts[2:])
+                if parts == ["api", "account"]:
+                    if not self.owner or accounts is None:
+                        return self._send(403, {"error": "только для владельца"})
+                    try:
+                        return self._send(200, {"message": accounts.switch(str(self._body().get("account", "")))})
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
+                if parts == ["api", "bot"]:
+                    enabled = self._body().get("enabled")
+                    if not isinstance(enabled, bool):
+                        return self._send(400, {"error": "enabled: true или false"})
+                    try:
+                        return self._send(200, {"message": bot.set_enabled(enabled)})
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
                 if parts[:2] == ["api", "proposals"] and len(parts) == 4 and parts[3] in ("confirm", "reject"):
                     msg = bot.confirm(parts[2]) if parts[3] == "confirm" else bot.reject(parts[2])
                     return self._send(200, {"message": msg})
@@ -217,9 +249,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR, users=None, telegram=None) -> ThreadingHTTPServer:
+          web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram))
+                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram, accounts))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

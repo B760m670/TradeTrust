@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Status } from "./api";
+import { api, setShownAccount, type Status } from "./api";
 import { hapticResult } from "./telegram";
 
 const REFRESH_MS = 20_000;
@@ -16,7 +16,9 @@ export function useBot() {
     if (loading.current) return;
     loading.current = true;
     try {
-      setStatus(await api.status());
+      const s = await api.status();
+      setShownAccount(s.accounts?.active);
+      setStatus(s);
       setError(null);
     } catch (e) {
       setError((e as Error).message);

@@ -151,6 +151,10 @@ class BybitClient:
                           Decimal(lot.get("minOrderAmt") or "5"), Decimal(lot.get("maxMarketOrderQty") or "1e18"))
 
     # --- аккаунт и ордера ----------------------------------------------------
+    def key_info(self) -> dict:
+        """Права и привязка к IP ключа, которым подписаны запросы."""
+        return self._request("GET", "/v5/user/query-api", auth=True)
+
     def wallet(self, coins: list[str] | None = None) -> dict[str, dict]:
         result = self._request("GET", "/v5/account/wallet-balance",
                                {"accountType": "UNIFIED", "coin": ",".join(coins) if coins else None}, auth=True)

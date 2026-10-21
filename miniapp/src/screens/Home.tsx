@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 import type { Status } from "../api";
 import type { Tab } from "../App";
-import { BotState, EnvChip, PauseButton, type Act } from "../components/BotControls";
+import { AccountButton } from "../components/Account";
+import { BotPowerButton, BotState, PauseButton, type Act } from "../components/BotControls";
 import { ChevronIcon, GearIcon } from "../components/icons";
 import { BigMoney, Button, Card, CoinAvatar, Flash, LiveBadge, Skeleton, Tile, Value } from "../components/ui";
 import { pct, price, tone, usd } from "../format";
@@ -38,7 +39,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
     <div className="home">
       <header className="top">
         <span className="logo" aria-hidden="true">TT</span>
-        <div className="top-title"><strong>TradeTrust</strong><EnvChip status={s} /></div>
+        <div className="top-title"><strong>TradeTrust</strong><AccountButton status={s} busy={busy} act={act} /></div>
         <button className="icon-btn btn btn-ghost" aria-label="Настройки" onClick={onSettings}><GearIcon /></button>
       </header>
 
@@ -48,6 +49,16 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
           <p className="muted small">
             {usd(s.paper_start_usdt ?? 1000)} виртуальных USDT по настоящим ценам Bybit. Можно торговать вручную
             на «Торговать» и смотреть, как работает трендовый бот. Настоящие деньги не используются.
+          </p>
+        </Card>
+      )}
+
+      {s.env === "mainnet" && (
+        <Card className="demo-card real-card">
+          <strong>Реальный счёт Bybit</strong>
+          <p className="muted small">
+            Сделки здесь — настоящие деньги. Бот на этом счёте {s.enabled === false ? "выключен: торгуете только вы" :
+              `включён и торгует в пределах ${usd(s.settings.capital_usdt)} USDT`}.
           </p>
         </Card>
       )}
@@ -83,7 +94,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </div>
         <div className="side-row">
           <BotState status={s} />
-          <PauseButton status={s} busy={busy} act={act} />
+          {s.enabled === false ? <BotPowerButton status={s} busy={busy} act={act} /> : <PauseButton status={s} busy={busy} act={act} />}
         </div>
       </Card>
 
