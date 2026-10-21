@@ -6,7 +6,6 @@ import {
   LineSeries,
   LineStyle,
   createChart,
-  type AutoscaleInfo,
   type IChartApi,
   type ISeriesApi,
   type SeriesType,
@@ -17,6 +16,7 @@ import { chartPrice } from "../format";
 import { useTheme, type Theme } from "../theme";
 import { ema, type Bar, type Interval } from "./candles";
 import { crosshairTime, tickMark } from "./chartTime";
+import type { Point } from "./seconds";
 import { CloseCountdown, PERIOD_SEC } from "./countdown";
 
 // те же цвета, что в styles.css (--up, --down, --accent, --demo, --faint) для каждой темы
@@ -53,9 +53,6 @@ export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }
   needMore.current = onNeedMore;
   const { theme } = useTheme();
   const colors = PALETTE[theme];
-  const levels = position ? [position.stop, position.entry] : [];
-  const levelsRef = useRef(levels);
-  levelsRef.current = levels;
 
   // график создаётся заново только при смене вида, таймфрейма или темы
   useEffect(() => {
@@ -73,17 +70,9 @@ export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }
         timeFormatter: crosshairTime(!["1d", "1w"].includes(interval)) },
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
-    // вход и стоп бота попадают на шкалу, если они рядом с ценой; далёкие не сжимают свечи в полоску
-    const autoscaleInfoProvider = (original: () => AutoscaleInfo | null) => {
-      const info = original();
-      const ref = refPrice.current;
-      const lv = levelsRef.current.filter((x) => ref != null && Math.abs(x / ref - 1) < 0.06);
-      if (!info?.priceRange || !lv.length) return info;
-      return { ...info, priceRange: { minValue: Math.min(info.priceRange.minValue, ...lv), maxValue: Math.max(info.priceRange.maxValue, ...lv) } };
-    };
     main.current = kind === "candles"
-      ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false, autoscaleInfoProvider })
-      : chart.addSeries(AreaSeries, { lineColor: fast, topColor: `${fast}55`, bottomColor: `${fast}00`, lineWidth: 2, autoscaleInfoProvider });
+      ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false })
+      : chart.addSeries(AreaSeries, { lineColor: fast, topColor: `${fast}55`, bottomColor: `${fast}00`, lineWidth: 2 });
     vol.current = chart.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
     chartRef.current = chart;
@@ -186,6 +175,62 @@ export function ZoomControls({ onZoom, onReset }: { onZoom: (factor: number) => 
       <button aria-label="Отдалить" onClick={() => onZoom(1.6)}>−</button>
       <button aria-label="Приблизить" onClick={() => onZoom(1 / 1.6)}>+</button>
       <button aria-label="Сбросить масштаб" onClick={onReset}>⟲</button>
+    </div>
+  );
+}
+
+/** «1с»: зелёная линия по последней сделке каждой секунды, как у Bybit; цена всегда в середине по высоте. */
+export function SecondChart({ points }: { points: Point[] }) {
+  const box = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const area = useRef<ISeriesApi<"Area"> | null>(null);
+  const shown = useRef<Point[]>([]);
+  const { theme } = useTheme();
+  const colors = PALETTE[theme];
+  const refPrice = useRef<number | null>(points[points.length - 1]?.value ?? null);
+
+  useEffect(() => {
+    if (!box.current) return;
+    const chart = createChart(box.current, {
+      autoSize: true,
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: colors.text,
+        fontFamily: "'Manrope Variable', system-ui, sans-serif", attributionLogo: false },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+      crosshair: { vertLine: { color: colors.up, labelBackgroundColor: colors.up }, horzLine: { color: colors.up, labelBackgroundColor: colors.up } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.3, bottom: 0.3 } },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, tickMarkFormatter: tickMark, rightOffset: 12 },
+      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p, refPrice.current ?? p), timeFormatter: crosshairTime(true, true) },
+      handleScale: { axisPressedMouseMove: { time: true, price: false } },
+    });
+    area.current = chart.addSeries(AreaSeries, { lineColor: colors.up, topColor: `${colors.up}40`, bottomColor: `${colors.up}00`,
+      lineWidth: 2, priceLineColor: colors.up, priceLineStyle: LineStyle.Dashed });
+    chartRef.current = chart;
+    shown.current = [];
+    return () => {
+      chart.remove();
+      chartRef.current = null;
+      area.current = null;
+    };
+  }, [theme]);
+
+  useEffect(() => {
+    const s = area.current, chart = chartRef.current;
+    if (!s || !chart || !points.length) return;
+    const prev = shown.current;
+    const last = points[points.length - 1];
+    if (prev.length && prev[0].time === points[0].time && points.length - prev.length <= 1 && points.length >= prev.length) {
+      s.update({ time: ts(last.time), value: last.value });
+    } else {
+      s.setData(points.map((p) => ({ time: ts(p.time), value: p.value })));
+      if (!prev.length) chart.timeScale().setVisibleLogicalRange({ from: points.length - 120, to: points.length + 12 });
+    }
+    shown.current = points;
+    refPrice.current = last.value;
+  }, [points]);
+
+  return (
+    <div className="chart-wrap">
+      <div ref={box} className="chart" data-testid="chart-1s" />
     </div>
   );
 }

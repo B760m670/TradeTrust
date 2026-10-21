@@ -117,7 +117,7 @@ export function feedUrl(env: string): string {
 
 export const LiveContext = createContext<LiveFeed | null>(null);
 
-const num = (v: unknown): number => (typeof v === "string" || typeof v === "number" ? Number(v) : NaN);
+export const num = (v: unknown): number => (typeof v === "string" || typeof v === "number" ? Number(v) : NaN);
 
 const FLUSH_MS = 1000; // биржа шлёт цены много раз в секунду — экрану хватает раза в секунду
 
