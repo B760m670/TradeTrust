@@ -175,6 +175,17 @@ describe("mini app", () => {
     }
   });
 
+  it("tells a demo user that the account is virtual", async () => {
+    Object.assign(status, { account: "demo" });
+    try {
+      await renderApp();
+      expect(await screen.findByText("Это ваш демо-счёт")).toBeTruthy();
+      expect(screen.getAllByText("Демо-счёт").length).toBeGreaterThan(0);
+    } finally {
+      Object.assign(status, { account: "owner" });
+    }
+  });
+
   it("saves only the changed settings after confirmation", async () => {
     await renderApp();
     fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));

@@ -161,8 +161,19 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Prop
         </header>
       )}
 
+      {s.account === "demo" && (
+        <Card className="demo-card">
+          <strong>Это ваш демо-счёт</strong>
+          <p className="muted small">
+            {usd(s.paper_start_usdt ?? 1000)} виртуальных USDT. Бот торгует на нём сам — по той же стратегии и по тем же
+            ценам Bybit, что и на настоящем счёте. Настоящие деньги не используются: можно спокойно смотреть, как он
+            работает, и менять настройки.
+          </p>
+        </Card>
+      )}
+
       <section className="hero">
-        <span className="eyebrow">Капитал бота</span>
+        <span className="eyebrow">{s.account === "demo" ? "Демо-капитал" : "Капитал бота"}</span>
         <BigMoney value={s.equity.total} />
         <div className="hero-pills">
           <span className={`pill pill-${tone(s.equity.unrealized)}`}>

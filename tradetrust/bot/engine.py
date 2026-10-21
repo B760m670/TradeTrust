@@ -706,7 +706,7 @@ class Bot:
             positions.append({"coin": p.coin, "qty": p.qty, "entry": p.entry, "stop": p.stop, "price": price,
                               "pnl_usdt": (price - p.entry) * p.qty, "opened_at": p.opened_at})
         return {
-            "env": self.cfg.env, "mode": self.mode, "paused": self.paused,
+            "env": self.cfg.env, "mode": self.mode, "paused": self.paused, "account": self.cfg.account,
             "equity": {k: v for k, v in eq.items() if k != "prices"},
             "positions": positions,
             "proposals": [p.__dict__ for p in self.store.pending_proposals()],
@@ -717,6 +717,7 @@ class Bot:
             "settings": {**self.settings(), "atr_mult": self.cfg.atr_mult,
                          "ema_fast": self.cfg.ema_fast, "ema_slow": self.cfg.ema_slow},
             "settings_defaults": self.defaults,
+            "paper_start_usdt": self.cfg.paper_start_usdt,
             "settings_limits": {k: {"min": lo, "max": hi} for k, (_, lo, hi) in LIMITS.items()},
             "all_coins": [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)],
             "equity_history": self.store.equity_history(now() - 90 * 86400),

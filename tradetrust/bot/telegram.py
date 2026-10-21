@@ -1,6 +1,7 @@
 """Telegram: уведомления, кнопки «Купить / Пропустить» и команды управления.
 
-Бот отвечает только владельцу (TELEGRAM_CHAT_ID), сообщения из других чатов игнорируются.
+Владелец (TELEGRAM_CHAT_ID) управляет своим счётом. Остальные пользователи — если включены демо-счета
+(PUBLIC_DEMO) — получают по /start свой бумажный счёт и управляют только им.
 """
 from __future__ import annotations
 
@@ -27,6 +28,10 @@ HELP = """Команды:
 /close BTC — закрыть позицию по рынку
 /closeall — закрыть все позиции"""
 
+OWNER_HELP = HELP + "\n/users — демо-счета пользователей"
+NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start."
+FULL = "Демо-счета сейчас закончились — попробуйте позже."
+
 
 
 class Telegram:
@@ -36,6 +41,7 @@ class Telegram:
         self.webapp_url = webapp_url
         self.http = session or requests.Session()
         self.bot: Bot | None = None
+        self.users = None  # Users — демо-счета, если включены
         self.offset = 0
 
     def _call(self, method: str, **params) -> dict:
@@ -46,8 +52,8 @@ class Telegram:
         return data["result"]
 
     # --- Notifier ------------------------------------------------------------
-    def send(self, text: str, buttons=None) -> int | None:
-        params = {"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True}
+    def send(self, text: str, buttons=None, chat_id: str | None = None) -> int | None:
+        params = {"chat_id": chat_id or self.chat_id, "text": text, "disable_web_page_preview": True}
         if buttons:
             params["reply_markup"] = {"inline_keyboard": [[self._button(t, d) for t, d in row] for row in buttons]}
         return self._call("sendMessage", **params)["message_id"]
@@ -59,8 +65,12 @@ class Telegram:
             return {"text": text, "web_app": {"url": data[4:]}}
         return {"text": text, "callback_data": data}
 
-    def edit(self, message_id: int, text: str) -> None:
-        self._call("editMessageText", chat_id=self.chat_id, message_id=message_id, text=text)
+    def edit(self, message_id: int, text: str, chat_id: str | None = None) -> None:
+        self._call("editMessageText", chat_id=chat_id or self.chat_id, message_id=message_id, text=text)
+
+    def for_chat(self, chat_id: str) -> "ChatNotifier":
+        """Уведомления в чат пользователя с демо-счётом."""
+        return ChatNotifier(self, str(chat_id))
 
     # --- входящие ------------------------------------------------------------
     def setup(self) -> None:
@@ -76,11 +86,14 @@ class Telegram:
             {"command": "help", "description": "Все команды"},
         ])
         if self.webapp_url:
-            self._call("setChatMenuButton", chat_id=int(self.chat_id),
-                       menu_button={"type": "web_app", "text": "Открыть", "web_app": {"url": self.webapp_url}})
+            button = {"type": "web_app", "text": "Открыть", "web_app": {"url": self.webapp_url}}
+            self._call("setChatMenuButton", chat_id=int(self.chat_id), menu_button=button)
+            if self.users is not None:  # кнопка «Открыть» у всех, кто пишет боту
+                self._call("setChatMenuButton", menu_button=button)
 
-    def start(self, bot: Bot) -> threading.Thread:
+    def start(self, bot: Bot, users=None) -> threading.Thread:
         self.bot = bot
+        self.users = users
         try:
             self.setup()
         except Exception:
@@ -100,46 +113,71 @@ class Telegram:
                 log.exception("telegram loop")
                 time.sleep(5)
 
+    def bot_for(self, chat_id: str, profile: dict | None = None, create: bool = False) -> Bot | None:
+        """Чей счёт: владельца или демо-счёт пользователя (create — открыть, если его нет)."""
+        if chat_id == self.chat_id:
+            return self.bot
+        if self.users is None:
+            return None
+        return self.users.get(chat_id, profile, create=create)
+
     def handle(self, upd: dict) -> None:
         if "callback_query" in upd:
             q = upd["callback_query"]
-            if str(q["message"]["chat"]["id"]) != self.chat_id:
+            chat = str(q["message"]["chat"]["id"])
+            bot = self.bot_for(chat)
+            if bot is None:
                 return
-            answer = self.on_button(q.get("data", ""))
+            answer = self.on_button(q.get("data", ""), bot)
             self._call("answerCallbackQuery", callback_query_id=q["id"], text=answer[:190])
             return
         msg = upd.get("message") or {}
-        if str(msg.get("chat", {}).get("id")) != self.chat_id:
-            log.warning("сообщение из чужого чата %s проигнорировано", msg.get("chat", {}).get("id"))
+        chat = str(msg.get("chat", {}).get("id"))
+        text = msg.get("text", "").strip()
+        if chat != self.chat_id and msg.get("chat", {}).get("type") != "private":
+            return  # группы и каналы — мимо
+        if self.users is None and chat != self.chat_id:
+            log.warning("сообщение из чужого чата %s проигнорировано", chat)
             return
-        reply = self.on_command(msg.get("text", "").strip())
+        cmd = (text.split() or [""])[0].split("@")[0].lower()
+        bot = self.bot_for(chat, msg.get("from"), create=cmd in ("/start", "/app"))
+        if bot is None:
+            self.send(FULL if cmd in ("/start", "/app") else NO_ACCOUNT, chat_id=chat)
+            return
+        reply = self.on_command(text, bot, chat)
         if reply:
-            self.send(reply)
+            self.send(reply, chat_id=chat)
 
-    def on_button(self, data: str) -> str:
+    def on_button(self, data: str, bot: Bot | None = None) -> str:
+        bot = bot or self.bot
         action, _, arg = data.partition(":")
         if action == "buy":
-            return self.bot.confirm(arg)
+            return bot.confirm(arg)
         if action == "skip":
-            return self.bot.reject(arg)
+            return bot.reject(arg)
         if action == "closeall":
-            results = self.bot.close_all()
+            results = bot.close_all()
             return "Закрыто позиций: %d" % len(results)
         return "?"
 
-    def on_command(self, text: str) -> str | None:
-        bot = self.bot
+    def on_command(self, text: str, bot: Bot | None = None, chat: str | None = None) -> str | None:
+        bot = bot or self.bot
+        chat = chat or self.chat_id
+        owner = chat == self.chat_id
         cmd, *args = text.split() or [""]
         cmd = cmd.split("@")[0].lower()
         if cmd in ("/start", "/help", "/app"):
+            text = "TradeTrust" if cmd == "/app" else (OWNER_HELP if owner else HELP)
             if self.webapp_url:
-                self.send("TradeTrust" if cmd == "/app" else HELP, [[("📊 Открыть приложение", f"url:{self.webapp_url}")]])
+                self.send(text, [[("📊 Открыть приложение", f"url:{self.webapp_url}")]], chat_id=chat)
                 return None
-            return HELP if cmd != "/app" else "Мини-приложение недоступно: не задан DOMAIN в .env"
+            return text if cmd != "/app" else "Мини-приложение недоступно: не задан DOMAIN в .env"
+        if cmd == "/users" and owner:
+            return self.users.summary() if self.users is not None else "Демо-счета выключены (PUBLIC_DEMO=0)."
         if cmd == "/status":
-            return self.status_text()
+            return self.status_text(bot)
         if cmd == "/signals":
-            return self.signals_text()
+            return self.signals_text(bot)
         if cmd == "/report":
             return bot.daily_report_text()
         if cmd == "/trades":
@@ -168,12 +206,12 @@ class Telegram:
             n = len(bot.store.positions())
             if not n:
                 return "Открытых позиций нет."
-            self.send(f"Закрыть все позиции ({n}) по рынку?", [[("Да, закрыть все", "closeall:yes")]])
+            self.send(f"Закрыть все позиции ({n}) по рынку?", [[("Да, закрыть все", "closeall:yes")]], chat_id=chat)
             return None
-        return "Не понял команду.\n\n" + HELP
+        return "Не понял команду.\n\n" + (OWNER_HELP if owner else HELP)
 
-    def status_text(self) -> str:
-        s = self.bot.status()
+    def status_text(self, bot: Bot | None = None) -> str:
+        s = (bot or self.bot).status()
         eq = s["equity"]
         lines = [f"Счёт: {s['env']} · режим: {MODE_NAMES[s['mode']]}" + (f" · ПАУЗА ({s['paused']})" if s["paused"] else ""),
                  f"Капитал: {eq['total']:,.2f} USDT, свободно {eq['free']:,.2f}"]
@@ -184,11 +222,12 @@ class Telegram:
             lines.append("Открытых позиций нет.")
         return "\n".join(lines)
 
-    def signals_text(self) -> str:
-        sig = self.bot.store.get("signals", {})
+    def signals_text(self, bot: Bot | None = None) -> str:
+        bot = bot or self.bot
+        sig = bot.store.get("signals", {})
         if not sig:
             return "Сигналов ещё нет — дождитесь закрытия свечи."
-        held = {p.coin for p in self.bot.store.positions()}
+        held = {p.coin for p in bot.store.positions()}
         rows = []
         for coin, s in sorted(sig.items()):
             if "error" in s:
@@ -199,3 +238,16 @@ class Telegram:
                      "тренд вниз" if s["trend_down"] else "тренд вверх")
             rows.append(f"{coin} {fmt(s['price'])}: {state}")
         return "\n".join(rows)
+
+
+class ChatNotifier:
+    """Notifier для одного чата — у каждого демо-счёта свой."""
+
+    def __init__(self, telegram: Telegram, chat_id: str):
+        self.tg, self.chat_id = telegram, chat_id
+
+    def send(self, text: str, buttons=None) -> int | None:
+        return self.tg.send(text, buttons, chat_id=self.chat_id)
+
+    def edit(self, message_id: int, text: str) -> None:
+        self.tg.edit(message_id, text, chat_id=self.chat_id)

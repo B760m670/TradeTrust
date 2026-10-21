@@ -238,7 +238,9 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
               : <p className="footnote">Бот ищет входы только по выбранным монетам. Открытые позиции сопровождаются до выхода.</p>}
           </Card>
 
-          <button className="link-btn" disabled={busy} onClick={() => void reset()}>Сбросить к значениям из .env</button>
+          <button className="link-btn" disabled={busy} onClick={() => void reset()}>
+            {s.account === "demo" ? "Сбросить к значениям по умолчанию" : "Сбросить к значениям из .env"}
+          </button>
         </div>
       </div>
 

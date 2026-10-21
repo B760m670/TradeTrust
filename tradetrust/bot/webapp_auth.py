@@ -25,8 +25,8 @@ def sign(fields: dict[str, str], bot_token: str) -> str:
     return hmac.new(secret, data_check_string(fields).encode(), hashlib.sha256).hexdigest()
 
 
-def validate(init_data: str, bot_token: str, owner_id: str, max_age: int = MAX_AGE_SECONDS) -> dict | None:
-    """Пользователь Telegram, если подпись верна, данные свежие и это владелец бота; иначе None."""
+def validate(init_data: str, bot_token: str, owner_id: str | None = None, max_age: int = MAX_AGE_SECONDS) -> dict | None:
+    """Пользователь Telegram, если подпись верна и данные свежие (и это владелец, если owner_id задан); иначе None."""
     if not init_data or not bot_token:
         return None
     try:
@@ -38,7 +38,12 @@ def validate(init_data: str, bot_token: str, owner_id: str, max_age: int = MAX_A
         return None
     if time.time() - int(fields.get("auth_date", "0")) > max_age:
         return None
-    user = json.loads(fields.get("user", "{}"))
-    if str(user.get("id")) != str(owner_id):
+    try:
+        user = json.loads(fields.get("user", "{}"))
+    except ValueError:
+        return None
+    if not isinstance(user, dict) or not str(user.get("id", "")).isdigit():
+        return None
+    if owner_id is not None and str(user["id"]) != str(owner_id):
         return None
     return user

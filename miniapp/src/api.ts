@@ -96,6 +96,8 @@ export interface Settings extends EditableSettings {
 
 export interface Status {
   env: Env;
+  /** owner — счёт владельца бота; demo — виртуальный демо-счёт пользователя */
+  account?: "owner" | "demo";
   mode: Mode;
   paused: string | null;
   equity: Equity;
@@ -107,6 +109,7 @@ export interface Status {
   events: BotEvent[];
   settings: Settings;
   settings_defaults: EditableSettings;
+  paper_start_usdt?: number;
   settings_limits: Record<NumericSetting, { min: number; max: number }>;
   all_coins: string[];
   equity_history: [number, number][]; // [время, капитал] после каждой 4ч свечи

@@ -35,6 +35,6 @@ export function BotState({ status: s }: { status: Status }) {
 }
 
 export function EnvChip({ status: s }: { status: Status }) {
-  const env = ENV_LABELS[s.env] ?? { label: s.env, real: false };
+  const env = s.account === "demo" ? { label: "Демо-счёт", real: false } : ENV_LABELS[s.env] ?? { label: s.env, real: false };
   return <Chip tone={env.real ? "down" : "muted"}>{env.label}</Chip>;
 }

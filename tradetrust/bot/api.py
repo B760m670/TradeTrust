@@ -1,8 +1,9 @@
 """HTTP: мини-приложение Telegram (сборка miniapp/ в web/) и JSON API.
 
 Доступ к /api/* — одним из двух способов:
-  * Authorization: tma <initData>   — мини-приложение, подпись Telegram, только владелец бота;
-  * Authorization: Bearer <API_TOKEN> — Android-приложение.
+  * Authorization: tma <initData>   — мини-приложение, подпись Telegram: владелец видит свой счёт,
+    остальные (если включены демо-счета) — свой демо-счёт, который открывается при первом входе;
+  * Authorization: Bearer <API_TOKEN> — Android-приложение владельца.
 Снаружи всё закрыто HTTPS — в docker-compose это делает Caddy.
 """
 from __future__ import annotations
@@ -30,7 +31,8 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
              "<code>cd miniapp &amp;&amp; npm ci &amp;&amp; npm run build</code></p>").encode()
 
 
-def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR):
+def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
+                 users=None):
     web_dir = web_dir.resolve()
 
     class Handler(BaseHTTPRequestHandler):
@@ -68,14 +70,23 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
             self.end_headers()
             self.wfile.write(body)
 
-        def _authorized(self) -> bool:
+        def _bot(self) -> Bot | None:
+            """Счёт того, кто спрашивает; None — ответ 401/403 уже отправлен."""
             header = self.headers.get("Authorization", "")
-            if header.startswith("tma ") and webapp_auth.validate(header[4:], tg_token, owner_id):
-                return True
+            if header.startswith("tma "):
+                user = webapp_auth.validate(header[4:], tg_token)
+                if user and str(user["id"]) == str(owner_id):
+                    return owner_bot
+                if user and users is not None:
+                    bot = users.get(user["id"], user, create=True)
+                    if bot is not None:
+                        return bot
+                    self._send(403, {"error": "Демо-счета сейчас закончились — попробуйте позже."})
+                    return None
             if header.startswith("Bearer ") and token and hmac.compare_digest(header[7:].strip(), token):
-                return True
+                return owner_bot
             self._send(401, {"error": "unauthorized"})
-            return False
+            return None
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
@@ -87,7 +98,8 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
                 return self._send(200, {"ok": True})
             if not url.path.startswith("/api/"):
                 return self._static(url.path)
-            if not self._authorized():
+            bot = self._bot()
+            if bot is None:
                 return
             try:
                 if url.path == "/api/status":
@@ -114,7 +126,8 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
             self._send(404, {"error": "not found"})
 
         def do_POST(self):
-            if not self._authorized():
+            bot = self._bot()
+            if bot is None:
                 return
             parts = urlparse(self.path).path.strip("/").split("/")  # api/<...>
             try:
@@ -153,8 +166,8 @@ def make_handler(bot: Bot, token: str, tg_token: str = "", owner_id: str = "", w
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir))
+          web_dir: Path = WEB_DIR, users=None) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir, users))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server
