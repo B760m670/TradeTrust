@@ -1,33 +1,35 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
-import { AlertIcon, BookIcon, GearIcon, HomeIcon, ShieldIcon, TrendIcon, WalletIcon } from "./components/icons";
+import { AlertIcon, CloseIcon, HomeIcon, TrendIcon, WalletIcon, CandleIcon } from "./components/icons";
 import { Empty, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
 import { useWide } from "./hooks";
 import { LiveContext, LiveFeed, TickersContext, feedUrl, useTickers } from "./live";
 import { withLivePrices } from "./logic";
 import { Admin } from "./screens/Admin";
-import { Coin } from "./screens/Coin";
-import { Journal } from "./screens/Journal";
+import { Assets } from "./screens/Assets";
+import { Home } from "./screens/Home";
+import { Markets } from "./screens/Markets";
 import { Overview } from "./screens/Overview";
-import { Portfolio } from "./screens/Portfolio";
 import { Settings } from "./screens/Settings";
-import { Signals } from "./screens/Signals";
+import { Trade } from "./screens/Trade";
 import { haptic, initData, tg } from "./telegram";
 import { ThemeContext, useThemeState } from "./theme";
 import { useBot } from "./useBot";
 
-export type Tab = "overview" | "portfolio" | "signals" | "journal" | "settings" | "admin";
+// Как у бирж: Главная · Рынки · Торговать · Активы. Бот и настройки — страницы поверх вкладок.
+export type Tab = "home" | "markets" | "trade" | "assets";
+type Page = "bot" | "bot-settings" | "settings";
 
 const TABS: { id: Tab; text: string; icon: ReactNode }[] = [
-  { id: "overview", text: "Обзор", icon: <HomeIcon /> },
-  { id: "portfolio", text: "Портфель", icon: <WalletIcon /> },
-  { id: "signals", text: "Сигналы", icon: <TrendIcon /> },
-  { id: "journal", text: "Журнал", icon: <BookIcon /> },
-  { id: "settings", text: "Настройки", icon: <GearIcon /> },
+  { id: "home", text: "Главная", icon: <HomeIcon /> },
+  { id: "markets", text: "Рынки", icon: <TrendIcon /> },
+  { id: "trade", text: "Торговать", icon: <CandleIcon /> },
+  { id: "assets", text: "Активы", icon: <WalletIcon /> },
 ];
-const ADMIN_TAB = { id: "admin" as Tab, text: "Админ", icon: <ShieldIcon /> };
-const tabsFor = (status: Status | null) => (status?.admin ? [...TABS, ADMIN_TAB] : TABS);
+const tabsFor = (_status: Status | null) => TABS;
+// админка — только по кнопке «Админка» в Telegram у владельца: ?page=admin
+const ADMIN_PAGE = new URLSearchParams(window.location.search).get("page") === "admin";
 
 function Logo() {
   return <span className="logo" aria-hidden="true">TT</span>;
@@ -105,35 +107,44 @@ function Main() {
 }
 
 function Screens({ status: botStatus, error, busy, message, clearMessage, act }: ReturnType<typeof useBot>) {
-  const coins = botStatus ? [...new Set([...botStatus.settings.coins, ...botStatus.positions.map((p) => p.coin)])] : [];
+  const coins = botStatus ? [...new Set([...botStatus.all_coins, ...botStatus.positions.map((p) => p.coin)])] : [];
   const tickers = useTickers(coins);
   const status = useMemo(() => botStatus && withLivePrices(botStatus, tickers), [botStatus, tickers]);
   const wide = useWide();
-  const [tab, setTab] = useState<Tab>("overview");
-  const [coin, setCoin] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("home");
+  const [page, setPage] = useState<Page | null>(null);
+  const [tradeCoin, setTradeCoin] = useState<string | null>(null);
+  const coin = tradeCoin ?? status?.positions[0]?.coin ?? "BTC";
 
   useEffect(() => {
     const button = tg?.BackButton;
     if (!button) return;
-    const back = () => setCoin(null);
-    if (coin) {
+    const back = () => setPage(page === "bot-settings" ? "bot" : null);
+    if (page) {
       button.show();
       button.onClick(back);
     } else {
       button.hide();
     }
     return () => button.offClick(back);
-  }, [coin]);
+  }, [page]);
 
+  const openPage = (p: Page | null) => {
+    haptic();
+    setPage(p);
+    window.scrollTo(0, 0);
+  };
   const openCoin = (c: string) => {
     haptic();
-    setCoin(c);
+    setTradeCoin(c);
+    setTab("trade");
+    setPage(null);
     window.scrollTo(0, 0);
   };
   const openTab = (t: Tab) => {
     haptic();
     setTab(t);
-    setCoin(null);
+    setPage(null);
     window.scrollTo(0, 0);
   };
 
@@ -142,31 +153,47 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
     body = error
       ? <Empty icon={<AlertIcon size={28} />} title="Нет связи с ботом">{error}</Empty>
       : <Loading />;
-  } else if (coin) {
-    body = <Coin coin={coin} status={status} busy={busy} act={act} wide={wide} onBack={() => setCoin(null)} />;
-  } else if (tab === "portfolio") {
-    body = <Portfolio />;
-  } else if (tab === "signals") {
-    body = <Signals status={status} onOpenCoin={openCoin} />;
-  } else if (tab === "journal") {
-    body = <Journal status={status} />;
-  } else if (tab === "settings") {
-    body = <Settings status={status} busy={busy} act={act} />;
-  } else if (tab === "admin" && status.admin) {
-    body = <Admin />;
+  } else if (ADMIN_PAGE) {
+    body = status.admin ? <Admin /> : <Empty title="Нет доступа">Админка доступна только владельцу бота.</Empty>;
+  } else if (page === "bot") {
+    body = <Overview status={status} busy={busy} act={act} wide={wide} onOpenCoin={openCoin} onTab={openTab}
+      onSettings={() => openPage("bot-settings")} />;
+  } else if (page === "bot-settings") {
+    body = <Settings status={status} busy={busy} act={act} scope="bot" />;
+  } else if (page === "settings") {
+    body = <Settings status={status} busy={busy} act={act} scope="app" />;
+  } else if (tab === "markets") {
+    body = <Markets status={status} onOpenCoin={openCoin} />;
+  } else if (tab === "trade") {
+    body = <Trade coin={coin} status={status} busy={busy} act={act} wide={wide} onCoin={openCoin} />;
+  } else if (tab === "assets") {
+    body = <Assets status={status} />;
   } else {
-    body = <Overview status={status} busy={busy} act={act} wide={wide} onOpenCoin={openCoin} onTab={openTab} />;
+    body = <Home status={status} busy={busy} act={act} onOpenCoin={openCoin} onTab={openTab}
+      onBot={() => openPage("bot")} onSettings={() => openPage("settings")} />;
+  }
+
+  if (ADMIN_PAGE) {
+    return (
+      <div className="app narrow admin-only">
+        <main className="content">
+          <button className="icon-btn btn btn-ghost admin-close" aria-label="Закрыть" onClick={() => tg?.close?.()}><CloseIcon /></button>
+          <div className="screen">{body}</div>
+        </main>
+        {message && <Toast message={message} onClose={clearMessage} />}
+      </div>
+    );
   }
 
   return (
     <TickersContext.Provider value={tickers}>
-      <div className={`app ${wide ? "wide" : "narrow"}`}>
-        {wide && <Sidebar tab={tab} onTab={openTab} status={status} busy={busy} act={act} inCoin={!!coin} />}
+      <div className={`app ${wide ? "wide" : "narrow"}${tab === "trade" && !page ? " trading" : ""}`}>
+        {wide && <Sidebar tab={tab} onTab={openTab} status={status} busy={busy} act={act} inCoin={!!page} />}
         <main className="content">
           {status && error && <div className="banner"><AlertIcon size={16} />Нет связи с сервером: {error}</div>}
-          <div key={coin ?? tab} className="screen">{body}</div>
+          <div key={page ?? (tab === "trade" ? `trade-${coin}` : tab)} className="screen">{body}</div>
         </main>
-        {!wide && <BottomNav tab={tab} onTab={openTab} inCoin={!!coin} status={status} />}
+        {!wide && <BottomNav tab={tab} onTab={openTab} inCoin={!!page} status={status} />}
         {message && <Toast message={message} onClose={clearMessage} />}
       </div>
     </TickersContext.Provider>

@@ -28,7 +28,7 @@ HELP = """Команды:
 /close BTC — закрыть позицию по рынку
 /closeall — закрыть все позиции"""
 
-OWNER_HELP = HELP + "\n/users — демо-счета пользователей"
+OWNER_HELP = HELP + "\n/admin — админка\n/users — демо-счета пользователей"
 NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start."
 
 
@@ -173,10 +173,13 @@ class Telegram:
         owner = chat == self.chat_id
         cmd, *args = text.split() or [""]
         cmd = cmd.split("@")[0].lower()
-        if cmd in ("/start", "/help", "/app"):
-            text = "TradeTrust" if cmd == "/app" else (OWNER_HELP if owner else HELP)
+        if cmd in ("/start", "/help", "/app", "/admin"):
+            text = "TradeTrust" if cmd in ("/app", "/admin") else (OWNER_HELP if owner else HELP)
             if self.webapp_url:
-                self.send(text, [[("📊 Открыть приложение", f"url:{self.webapp_url}")]], chat_id=chat)
+                buttons = [[("📊 Открыть приложение", f"url:{self.webapp_url}")]]
+                if owner:  # админка — только владельцу и только отсюда, в приложении её нет
+                    buttons.append([("🛡 Админка", f"url:{self.webapp_url}/?page=admin")])
+                self.send(text, buttons, chat_id=chat)
                 return None
             return text if cmd != "/app" else "Мини-приложение недоступно: не задан DOMAIN в .env"
         if cmd == "/users" and owner:

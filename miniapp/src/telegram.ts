@@ -8,6 +8,7 @@ interface TelegramWebApp {
   platform: string;
   ready(): void;
   expand(): void;
+  close?(): void;
   BackButton: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback?: {
     impactOccurred(style: Impact): void;

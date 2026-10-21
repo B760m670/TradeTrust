@@ -882,3 +882,56 @@ def test_api_trades_and_fallback_without_history(make_bot):
         assert e.value.code == 400
     finally:
         server.shutdown()
+
+
+# --- ручная торговля, как на бирже ------------------------------------------------
+
+def test_manual_buy_and_sell_only_own_coins(make_bot):
+    bot, ex, _ = make_bot("auto")
+    ex.set("SOL", cross_on_last_bar())
+    price = ex.prices["SOLUSDT"]
+    msg = bot.manual_order("sol", "buy", usdt=100)
+    assert msg.startswith("🛒 Куплено") and "бот эту сделку не ведёт" in msg
+    bought = ex.balances["SOL"]
+    assert bought * price == pytest.approx(100 * 0.999, rel=0.02)
+    assert bot.store.position("SOL") is None                      # бот ручную покупку не ведёт
+    assert bot.store.orders()[0]["side"] == "buy"
+    bot.on_candle_close()                                          # бот открыл свою позицию по SOL
+    pos = bot.store.position("SOL")
+    assert pos is not None
+    # просим продать больше, чем своё, — продаёт только своё, позицию бота не трогает
+    msg = bot.manual_order("SOL", "sell", qty=bought + pos.qty)
+    assert msg.startswith("💵 Продано") and pos.qty <= ex.balances["SOL"] < pos.qty + 0.001  # остаток — пыль от шага лота
+    ex.balances["SOL"] = pos.qty  # пыль ушла — на счёте только монеты бота
+    with pytest.raises(ValueError, match="держит бот"):
+        bot.manual_order("SOL", "sell", usdt=10)
+    for bad in ({"usdt": 0}, {"usdt": 5, "qty": 1}, {}):
+        with pytest.raises(ValueError):
+            bot.manual_order("SOL", "buy", **bad)
+    with pytest.raises(ValueError, match="минимальной"):
+        bot.manual_order("SOL", "buy", usdt=1)
+    with pytest.raises(ValueError):
+        bot.manual_order("DOGE2", "buy", usdt=10)
+
+
+def test_api_manual_order(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    server = api.serve(bot, "secret-token", 0)
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    auth = {"Authorization": "Bearer secret-token"}
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/order", data=json.dumps(body).encode(), method="POST", headers=auth)
+        return json.loads(urllib.request.urlopen(req).read())
+
+    try:
+        assert post({"coin": "SOL", "side": "buy", "usdt": 50})["message"].startswith("🛒")
+        status = json.loads(urllib.request.urlopen(urllib.request.Request(base + "/api/status", headers=auth)).read())
+        assert status["orders"][0]["coin"] == "SOL" and status["orders"][0]["side"] == "buy"
+        assert post({"coin": "SOL", "side": "sell", "usdt": 5000})["message"].startswith("💵")  # продаёт всё своё
+        with pytest.raises(HTTPError) as e:
+            post({"coin": "SOL", "side": "sell", "usdt": 10})
+        assert e.value.code == 400  # своего почти не осталось — меньше минимального ордера
+    finally:
+        server.shutdown()

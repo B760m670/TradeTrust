@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 import { api, type BtcTrend, type Position, type Proposal, type Scan, type Status } from "../api";
 import type { Tab } from "../App";
-import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
+import { BotState, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
-import { ChevronIcon } from "../components/icons";
+import { ChevronIcon, GearIcon } from "../components/icons";
 import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, StatusDot, Tile, Value } from "../components/ui";
 import { clock, dateTime, pct, price, tone, usd } from "../format";
 import { useNow } from "../hooks";
@@ -17,6 +17,7 @@ interface Props {
   wide: boolean;
   onOpenCoin: (coin: string) => void;
   onTab: (tab: Tab) => void;
+  onSettings: () => void;
 }
 
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
@@ -69,7 +70,7 @@ function ScanCard({ scan, next, fast, slow, trendDays }: {
   );
 }
 
-function ProposalCard({ p, busy, act, i }: { p: Proposal; busy: boolean; act: Act; i: number }) {
+export function ProposalCard({ p, busy, act, i }: { p: Proposal; busy: boolean; act: Act; i: number }) {
   const left = Math.max(0, Math.round((p.expires_at - Date.now() / 1000) / 60));
   return (
     <Card className="proposal accent-border" style={stagger(i)}>
@@ -93,7 +94,7 @@ function ProposalCard({ p, busy, act, i }: { p: Proposal; busy: boolean; act: Ac
   );
 }
 
-function PositionCard({ p, onOpen, i }: { p: Position; onOpen: () => void; i: number }) {
+export function PositionCard({ p, onOpen, i }: { p: Position; onOpen: () => void; i: number }) {
   const change = (p.price / p.entry - 1) * 100;
   return (
     <button className="card position tappable" style={stagger(i)} onClick={onOpen}>
@@ -133,13 +134,14 @@ function SignalsPanel({ status: s, onOpenCoin, onTab, limit }: {
         {rows.length === 0 && <span className="muted small">Ждём закрытия первой свечи</span>}
       </div>
       {rows.length > limit && (
-        <button className="link-btn" onClick={() => onTab("signals")}>Все {rows.length} монет <ChevronIcon size={16} /></button>
+        <button className="link-btn" onClick={() => onTab("markets")}>Все {rows.length} монет <ChevronIcon size={16} /></button>
       )}
     </Card>
   );
 }
 
-export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Props) {
+/** Страница бота — как карточка торгового бота на бирже: капитал, режим, позиции, сигналы, настройки. */
+export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab, onSettings }: Props) {
   const now = useNow();
   const live = Object.keys(useLiveTickers()).length > 0;
   const risk = stopRisk(s.positions);
@@ -150,30 +152,16 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Prop
 
   return (
     <div className="overview">
-      {!wide && (
-        <header className="top">
-          <span className="logo" aria-hidden="true">TT</span>
-          <div className="top-title">
-            <BotState status={s} />
-            <strong>TradeTrust</strong>
-          </div>
-          <EnvChip status={s} />
-        </header>
-      )}
-
-      {s.account === "demo" && (
-        <Card className="demo-card">
-          <strong>Это ваш демо-счёт</strong>
-          <p className="muted small">
-            {usd(s.paper_start_usdt ?? 1000)} виртуальных USDT. Бот торгует на нём сам — по той же стратегии и по тем же
-            ценам Bybit, что и на настоящем счёте. Настоящие деньги не используются: можно спокойно смотреть, как он
-            работает, и менять настройки.
-          </p>
-        </Card>
-      )}
+      <header className="page-head bot-head">
+        <div>
+          <h1>Трендовый бот</h1>
+          <BotState status={s} />
+        </div>
+        <Button onClick={onSettings}><GearIcon size={18} /><span>Настройки бота</span></Button>
+      </header>
 
       <section className="hero">
-        <span className="eyebrow">{s.account === "demo" ? "Демо-капитал" : "Капитал бота"}</span>
+        <span className="eyebrow">Капитал бота</span>
         <BigMoney value={s.equity.total} />
         <div className="hero-pills">
           <span className={`pill pill-${tone(s.equity.unrealized)}`}>

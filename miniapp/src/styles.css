@@ -587,3 +587,52 @@ button.card { text-align: left; width: 100%; }
 .tv-chart { width: 100%; height: 100%; }
 .tv-chart iframe { border: 0; }
 .tv-failed { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
+
+/* --- биржевая структура: Главная · Рынки · Торговать · Активы ------------------------- */
+.bot-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.bot-head .btn { display: inline-flex; align-items: center; gap: 6px; }
+.top-title { display: flex; align-items: center; gap: 8px; }
+.bot-card { display: flex; flex-direction: column; gap: 12px; }
+.bot-card-main { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.bot-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--accent-soft);
+  font-size: 20px; }
+.tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.trade-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.pair-btn { display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.pair-btn svg:last-child { transform: rotate(90deg); color: var(--muted); }
+.pair-name { display: flex; align-items: baseline; gap: 2px; font-size: 18px; }
+.trade-head .row-end { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.trade-head .coin-price { font-size: 22px; font-weight: 800; }
+.coin-side > .segmented { margin-bottom: 12px; }
+.order-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.order-buttons .btn { height: 48px; font-size: 16px; font-weight: 800; }
+.trade-bar { position: fixed; z-index: 9; left: 16px; right: 16px; max-width: 520px; margin: 0 auto;
+  bottom: calc(16px + 64px + 10px + var(--safe-bottom)); }
+.app.trading .content { padding-bottom: calc(190px + var(--safe-bottom)); }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.5); display: flex; align-items: flex-end;
+  justify-content: center; animation: fade-in 0.2s; }
+.sheet { width: 100%; max-width: 560px; max-height: 86vh; overflow: auto; box-sizing: border-box; display: flex;
+  flex-direction: column; gap: 14px; padding: 16px 16px calc(20px + var(--safe-bottom)); border-radius: 24px 24px 0 0;
+  background: var(--toast-bg); border: 1px solid var(--border); animation: sheet-up 0.28s var(--ease); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.order-field { display: flex; flex-direction: column; gap: 6px; }
+.order-field input { padding: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--inset);
+  color: var(--text); font: inherit; font-size: 22px; font-weight: 800; }
+.order-parts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.chip-btn { padding: 8px 0; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.pair-list .list-row.on { background: var(--accent-soft); }
+.pair-list .list-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center; }
+.admin-only .content { padding-top: 12px; }
+.admin-close { position: absolute; right: 16px; top: 12px; z-index: 5; }
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.btn-up { border: 0; background: var(--up); color: #062a1c; font-weight: 800; }
+.btn-up:hover { background: var(--up); filter: brightness(1.05); }
+.order-buttons .btn-danger, .sheet .btn-danger, .order-buttons .btn-danger:hover, .sheet .btn-danger:hover {
+  border: 0; background: var(--down); color: #2a0610; }
+.btn-up:disabled, .order-buttons .btn-danger:disabled { opacity: 0.4; }
+.bot-card .tile-value { font-size: 17px; }
+.bot-card .tile { min-width: 0; }
