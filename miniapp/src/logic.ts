@@ -15,7 +15,7 @@ export interface CoinState {
 const STATES: Record<CoinKind, Omit<CoinState, "kind" | "isEntry">> = {
   entry: { label: "Вход", tone: "accent", order: 0 },
   held: { label: "В позиции", tone: "up", order: 1 },
-  filtered: { label: "Фильтр BTC", tone: "amber", order: 2 },
+  filtered: { label: "BTC падает", tone: "amber", order: 2 },
   up: { label: "Рост", tone: "up", order: 3 },
   down: { label: "Падение", tone: "muted", order: 4 },
   none: { label: "Нет данных", tone: "muted", order: 5 },
@@ -30,7 +30,7 @@ export function coinState(sig: Signal | undefined, held: boolean): CoinState {
   else if (sig.cross_up) kind = "filtered";
   else if (sig.trend_down) kind = "down";
   else kind = "up";
-  // вход есть, но его отсёк фильтр: долгосрочного роста нет или BTC ниже средней
+  // вход есть, но его отсёк фильтр: долгосрочного роста нет или биткоин ниже своей средней
   const label = kind === "filtered" && sig?.trend_ok === false ? "Фильтр тренда" : STATES[kind].label;
   return { ...STATES[kind], label, kind, isEntry: kind === "entry" };
 }

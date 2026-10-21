@@ -53,7 +53,7 @@ def contexts(prepared: dict[str, pd.DataFrame], btc_daily: pd.DataFrame) -> dict
         day = pd.Timestamp(d, tz="UTC")
         fomc[(index >= day - pd.Timedelta(days=1)) & (index < day + pd.Timedelta(days=1))] = True
     # дневные значения биткоина известны только на закрытии дня → сдвиг на день
-    btc_ok = {n: (btc > btc.rolling(n).mean()).shift(1).reindex(index, method="ffill") for n in (50, 100, 200)}
+    btc_ok = {n: (btc > btc.rolling(n).mean()).shift(1).reindex(index, method="ffill") for n in (30, 40, 50, 60, 70, 100, 200)}
     return {"breadth": up.mean(axis=1), "breadth_mom": mom.mean(axis=1),
             "fng": fng.reindex(index, method="ffill"), "fomc": fomc, **{f"btc{n}": v for n, v in btc_ok.items()}}
 
@@ -65,7 +65,7 @@ def variants(ctx: dict[str, pd.Series]) -> dict[str, tuple[pf.Rules, pd.Series |
         for k in (0.5, 0.0):
             v[f"Ширина < {b:.0%} монет в росте → риск ×{k:g}"] = (BASE, one(ctx["breadth"] < b, k))
             v[f"Монет в росте за 120 дн < {b:.0%} → риск ×{k:g}"] = (BASE, one(ctx["breadth_mom"] < b, k))
-    for n in (50, 100, 200):
+    for n in (30, 40, 50, 60, 70, 100, 200):
         for k in (0.5, 0.0):
             v[f"BTC ниже {n}-дн. средней → риск ×{k:g}"] = (BASE, one(ctx[f"btc{n}"] == False, k))  # noqa: E712
     for t in (15, 20, 25):

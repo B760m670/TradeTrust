@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { api, type Position, type Proposal, type Scan, type Status } from "../api";
+import { api, type BtcTrend, type Position, type Proposal, type Scan, type Status } from "../api";
 import type { Tab } from "../App";
 import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
@@ -20,6 +20,16 @@ interface Props {
 }
 
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
+
+/** Как бот оценивает рынок в целом: биткоин ниже своей средней — новые сделки на паузе. */
+function BtcLine({ btc, heldBack }: { btc: BtcTrend; heldBack: string[] }) {
+  if (btc.error) return <p className="small tone-amber">Новые входы на паузе: {btc.error}</p>;
+  const skipped = heldBack.length ? ` Пропущены сигналы: ${heldBack.join(", ")}.` : "";
+  return btc.ok
+    ? <p className="small"><StatusDot tone="up" /> Биткоин выше {btc.days}-дневной средней — новые входы разрешены.</p>
+    : <p className="small tone-amber"><StatusDot tone="amber" /> Биткоин ниже {btc.days}-дневной средней — рынок падает,
+      новые сделки на паузе, открытые бот ведёт как обычно.{skipped}</p>;
+}
 
 function ScanCard({ scan, next, fast, slow, trendDays }: {
   scan: Scan | null; next: number; fast: number; slow: number; trendDays: number | null;
@@ -47,6 +57,7 @@ function ScanCard({ scan, next, fast, slow, trendDays }: {
         <span>{scan.entries.length ? <>вход: <strong>{scan.entries.join(", ")}</strong></> : "сигналов на вход нет"}</span>
         {scan.exits.length > 0 && <span>выход: <strong>{scan.exits.join(", ")}</strong></span>}
       </div>
+      {scan.btc && <BtcLine btc={scan.btc} heldBack={scan.held_back ?? []} />}
       {quiet && (
         <p className="muted small">
           Бот покупает, только когда у монеты начинается рост: средняя EMA {fast} пересекает EMA {slow} снизу вверх

@@ -203,10 +203,17 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
               </div>
               <div className={`field${isChanged("btc_filter") ? " changed" : ""}`}>
                 <div className="field-text">
-                  <strong>Фильтр BTC</strong>
-                  <span>Входить, только когда BTC выше 200-дневной средней</span>
+                  <strong>Пауза, когда BTC падает</strong>
+                  <span>Новые сделки — только когда биткоин выше своей {draft.btc_days}-дневной средней. По истории
+                    2022–2026 доход выше, просадка −28% вместо −35%</span>
                 </div>
-                <Switch checked={draft.btc_filter} label="Фильтр BTC" onChange={(v) => set("btc_filter", v)} />
+                <Switch checked={draft.btc_filter} label="Пауза, когда BTC падает" onChange={(v) => set("btc_filter", v)} />
+              </div>
+              <div className={`field${isChanged("btc_days") ? " changed" : ""}${draft.btc_filter ? "" : " disabled"}`}>
+                <div className="field-text"><strong>Средняя BTC</strong><span>За сколько дней считать среднюю цену</span></div>
+                <Stepper value={draft.btc_days} min={s.settings_limits.btc_days?.min ?? 20}
+                  max={s.settings_limits.btc_days?.max ?? 200} step={10} unit=" дн" label="Средняя BTC"
+                  onChange={(v) => set("btc_days", v)} />
               </div>
             </div>
             {riskConflict && <p className="tone-down small">Общий риск не может быть меньше риска на сделку.</p>}

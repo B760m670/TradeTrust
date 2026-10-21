@@ -127,8 +127,9 @@ class Recorder:
 @pytest.fixture
 def make_bot(tmp_path):
     def _make(mode="auto", coins=("SOL",), **kw):
-        # тесты правил исполнения написаны для риска 1% и коротких историй — без фильтра тренда
-        kw = {"risk_pct": 1.0, "max_positions": 5, "max_total_risk_pct": 5.0, "trend_filter": False, **kw}
+        # тесты правил исполнения написаны для риска 1% и коротких историй — без фильтров тренда и BTC
+        kw = {"risk_pct": 1.0, "max_positions": 5, "max_total_risk_pct": 5.0, "trend_filter": False,
+              "btc_filter": False, **kw}
         cfg = Config(mode=mode, coins=list(coins), ema_fast=3, ema_slow=6, db_path=str(tmp_path / "bot.db"), **kw)
         ex, rec = FakeExchange(), Recorder()
         bot = Bot(cfg, ex, Store(cfg.db_path), rec)
@@ -794,3 +795,59 @@ def test_fresh_install_is_not_migrated(tmp_path):
     rec = Recorder()
     Bot(Config(db_path=str(tmp_path / "bot.db"), coins=["SOL"]), FakeExchange(), Store(str(tmp_path / "bot.db")), rec)
     assert not rec.sent
+
+
+def btc_daily(closes, start="2025-12-01"):
+    idx = pd.date_range(start, periods=len(closes), freq="1D", tz="UTC")
+    c = np.asarray(closes, dtype=float)
+    return pd.DataFrame({"open": c, "high": c, "low": c, "close": c, "volume": 1.0}, index=idx)
+
+
+@pytest.mark.parametrize("path, bought", [(np.linspace(100, 60, 60), False), (np.linspace(60, 100, 60), True)])
+def test_btc_filter_holds_back_entries_while_btc_falls(make_bot, path, bought):
+    bot, ex, rec = make_bot("auto", btc_filter=True, btc_days=10)
+    ex.set("SOL", cross_on_last_bar())
+    ex.data["BTCUSDT"] = btc_daily(path)  # подделка не различает интервалы, а 4ч BTC здесь не нужен
+    bot.on_candle_close()
+    assert (bot.store.position("SOL") is not None) is bought
+    texts = [t for t, _ in rec.sent]
+    if bought:
+        assert any("Почему:" in t and "биткоин выше 10-дневной средней" in t for t in texts)
+        assert bot.store.get("last_scan")["btc"]["ok"]
+    else:
+        assert any(t.startswith("🔴 Биткоин ниже 10-дневной средней") for t in texts)
+        assert any(t.startswith("⏸ Сигнал на вход: SOL") for t in texts)
+        assert bot.store.get("last_scan")["held_back"] == ["SOL"]
+
+
+def test_btc_filter_without_btc_data_skips_entries(make_bot):
+    bot, ex, rec = make_bot("auto", btc_filter=True)
+    ex.set("SOL", cross_on_last_bar())
+    bot.on_candle_close()
+    assert bot.store.position("SOL") is None
+    assert any("нет данных по BTC" in t for t, _ in rec.sent)
+
+
+def test_btc_trend_uses_only_closed_days():
+    from tradetrust.bot.engine import btc_trend
+    daily = btc_daily([10.0] * 5 + [1.0])  # последний день (05.12) ещё идёт — его падения не видно
+    bar = pd.Timestamp("2025-12-06 00:00", tz="UTC") - pd.Timedelta(hours=4)
+    assert btc_trend(daily, 3, bar) == {"ok": False, "price": 10.0, "avg": 10.0, "days": 3}
+    assert btc_trend(daily, 3, pd.Timestamp("2025-12-07", tz="UTC"))["price"] == 1.0
+    assert "error" in btc_trend(daily, 30, bar)
+
+
+def test_running_bot_turns_on_btc_filter_once(tmp_path):
+    db = str(tmp_path / "bot.db")
+    store = Store(db)
+    store.set("last_bar", 1)
+    store.set("strategy_version", 2)
+    rec = Recorder()
+    old = dict(coins=["SOL"], db_path=db, btc_filter=False)
+    bot = Bot(Config(**old), FakeExchange(), store, rec)
+    assert bot.cfg.btc_filter and bot.cfg.btc_days == 50
+    assert any("биткоин выше 50-дневной средней" in t for t, _ in rec.sent)
+    bot.update_settings({"btc_filter": False})  # владелец выключил — больше не включаем
+    rec.sent.clear()
+    again = Bot(Config(**old), FakeExchange(), Store(db), rec)
+    assert not again.cfg.btc_filter and not rec.sent

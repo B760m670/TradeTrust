@@ -163,13 +163,25 @@ describe("mini app", () => {
     expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenLastCalledWith("#F3F3F7");
   });
 
+  it("explains that new entries wait while bitcoin is below its average", async () => {
+    const scan = status.last_scan;
+    Object.assign(status, { last_scan: { ...scan, held_back: ["SOL"], btc: { ok: false, days: 50, price: 60000, avg: 65000 } } });
+    try {
+      await renderApp();
+      expect(await screen.findByText(/Биткоин ниже 50-дневной средней/)).toBeTruthy();
+      expect(screen.getByText(/Пропущены сигналы: SOL/)).toBeTruthy();
+    } finally {
+      Object.assign(status, { last_scan: scan });
+    }
+  });
+
   it("saves only the changed settings after confirmation", async () => {
     await renderApp();
     fireEvent.click(await screen.findByRole("button", { name: "Настройки" }));
     const risk = await screen.findByRole("group", { name: "Риск на сделку" });
     fireEvent.click(within(risk).getByRole("button", { name: "Больше" }));
     expect(within(risk).getByText("1,25%")).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch", { name: "Фильтр BTC" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Пауза, когда BTC падает" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     const post = calls.find((c) => c.method === "POST")!;
