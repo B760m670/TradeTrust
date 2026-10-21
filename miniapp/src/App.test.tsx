@@ -5,6 +5,7 @@ import status from "../../android/app/src/test/resources/bot_status.json";
 
 vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
+  SUB_HEIGHT: 72,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
@@ -188,8 +189,12 @@ describe("mini app", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=4h")).toBe(true));
     expect(localStorage.getItem("chart_tf")).toBe("4h");
     expect(await screen.findByTestId("chart")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "EMA" }));
-    expect(localStorage.getItem("chart_ema")).toBe("off");
+    // ряд индикаторов, как у Bybit: основной один, окна под графиком — по нажатию
+    fireEvent.click(screen.getByRole("button", { name: "BOLL" }));
+    expect(localStorage.getItem("chart_main")).toBe("BOLL");
+    expect(screen.getByRole("button", { name: "EMA" }).getAttribute("aria-pressed")).toBe("false");
+    for (const k of ["MACD", "RSI", "KDJ"]) fireEvent.click(screen.getByRole("button", { name: k }));
+    expect(localStorage.getItem("chart_sub")).toBe("RSI,KDJ");
     fireEvent.click(nav.getByRole("button", { name: "Рынки" }));
     await screen.findByText("Сигнал бота");
   });
