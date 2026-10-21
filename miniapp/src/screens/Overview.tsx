@@ -21,7 +21,9 @@ interface Props {
 
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
 
-function ScanCard({ scan, next, fast, slow }: { scan: Scan | null; next: number; fast: number; slow: number }) {
+function ScanCard({ scan, next, fast, slow, trendDays }: {
+  scan: Scan | null; next: number; fast: number; slow: number; trendDays: number | null;
+}) {
   if (!scan) {
     return (
       <Card className="scan-card">
@@ -47,7 +49,8 @@ function ScanCard({ scan, next, fast, slow }: { scan: Scan | null; next: number;
       </div>
       {quiet && (
         <p className="muted small">
-          Бот покупает, только когда у монеты начинается рост: средняя EMA {fast} пересекает EMA {slow} снизу вверх.
+          Бот покупает, только когда у монеты начинается рост: средняя EMA {fast} пересекает EMA {slow} снизу вверх
+          {trendDays ? ` и монета выросла за ${trendDays} дней` : ""}.
           {weak ? " Сейчас рынок в основном падает — в такое время система ждёт и бережёт деньги." : " Пока таких пересечений нет."}
         </p>
       )}
@@ -174,7 +177,8 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab }: Prop
         <Tile label="Свеча закроется" value={clock(nextCandleClose(now))} hint="таймфрейм 4 ч" />
       </div>
 
-      <ScanCard scan={s.last_scan ?? null} next={nextCandleClose(now)} fast={s.settings.ema_fast} slow={s.settings.ema_slow} />
+      <ScanCard scan={s.last_scan ?? null} next={nextCandleClose(now)} fast={s.settings.ema_fast} slow={s.settings.ema_slow}
+        trendDays={s.settings.trend_filter ? s.settings.trend_days : null} />
 
       <div className="overview-grid">
         <div className="col-main">

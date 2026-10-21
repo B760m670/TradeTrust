@@ -52,7 +52,9 @@ class StaticMarket:
 
 def main() -> None:
     db = tempfile.mkdtemp() + "/bot.db"
-    cfg = Config(env="paper", mode="confirm", coins=["SOL", "ETH", "LINK"], ema_fast=3, ema_slow=6, db_path=db)
+    # короткая искусственная история: без фильтра тренда, риск 1% — как в контрактных тестах клиентов
+    cfg = Config(env="paper", mode="confirm", coins=["SOL", "ETH", "LINK"], ema_fast=3, ema_slow=6, db_path=db,
+                 risk_pct=1.0, max_positions=5, max_total_risk_pct=5.0, trend_filter=False)
     market = StaticMarket()
     store = Store(db)
     bot = Bot(cfg, PaperExchange(market, store), store)

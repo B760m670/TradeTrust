@@ -63,6 +63,8 @@ export interface Signal {
   cross_up?: boolean;
   trend_down?: boolean;
   regime_ok?: boolean;
+  momentum?: number | null; // рост за trend_days дней, доля
+  trend_ok?: boolean;       // проходит фильтр «только монеты в росте»
   error?: string;
 }
 
@@ -78,10 +80,12 @@ export interface EditableSettings {
   report_hour_utc: number;
   btc_filter: boolean;
   daily_report: boolean;
+  trend_filter: boolean;
+  trend_days: number;
   coins: string[];
 }
 
-export type NumericSetting = Exclude<keyof EditableSettings, "btc_filter" | "daily_report" | "coins">;
+export type NumericSetting = Exclude<keyof EditableSettings, "btc_filter" | "daily_report" | "trend_filter" | "coins">;
 
 export interface Settings extends EditableSettings {
   atr_mult: number;

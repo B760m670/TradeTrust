@@ -195,7 +195,7 @@ class Telegram:
                 rows.append(f"{coin}: ошибка данных")
                 continue
             state = ("в позиции" if coin in held else
-                     "ВХОД" if s["cross_up"] and s["regime_ok"] else
+                     "ВХОД" if s["cross_up"] and s["regime_ok"] and s.get("trend_ok", True) else
                      "тренд вниз" if s["trend_down"] else "тренд вверх")
             rows.append(f"{coin} {fmt(s['price'])}: {state}")
         return "\n".join(rows)

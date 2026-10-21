@@ -187,6 +187,20 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
                 </div>
                 <CapitalInput value={draft.capital_usdt} onChange={(v) => set("capital_usdt", v)} />
               </div>
+              <div className={`field${isChanged("trend_filter") ? " changed" : ""}`}>
+                <div className="field-text">
+                  <strong>Только монеты в росте</strong>
+                  <span>Покупать, только если монета выросла за {draft.trend_days} дней. По истории 2022–2026 просадка
+                    вдвое меньше</span>
+                </div>
+                <Switch checked={draft.trend_filter} label="Только монеты в росте" onChange={(v) => set("trend_filter", v)} />
+              </div>
+              <div className={`field${isChanged("trend_days") ? " changed" : ""}${draft.trend_filter ? "" : " disabled"}`}>
+                <div className="field-text"><strong>Рост за</strong><span>Окно, за которое считается рост</span></div>
+                <Stepper value={draft.trend_days} min={s.settings_limits.trend_days?.min ?? 30}
+                  max={s.settings_limits.trend_days?.max ?? 160} step={10} unit=" дн" label="Рост за"
+                  onChange={(v) => set("trend_days", v)} />
+              </div>
               <div className={`field${isChanged("btc_filter") ? " changed" : ""}`}>
                 <div className="field-text">
                   <strong>Фильтр BTC</strong>
