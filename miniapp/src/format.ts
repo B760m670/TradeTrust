@@ -12,6 +12,13 @@ export function price(x: number | null | undefined): string {
   return new Intl.NumberFormat("ru-RU", { maximumSignificantDigits: 4 }).format(x);
 }
 
+/** Цена на осях графиков: точнее, чтобы на мелких таймфреймах подписи не сливались (287,41 · 0,19125). */
+export function chartPrice(x: number): string {
+  const a = Math.abs(x);
+  const digits = a >= 100 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 5 : 8;
+  return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(x);
+}
+
 export function usd(x: number, withSign = false): string {
   const s = nf(2).format(Math.abs(x));
   return withSign ? sign(x) + s : (x < 0 ? "−" : "") + s;
