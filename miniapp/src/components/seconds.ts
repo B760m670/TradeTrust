@@ -11,7 +11,7 @@ export interface Point {
   value: number;
 }
 
-const MAX_POINTS = 1500;
+const MAX_POINTS = 3000;
 export const IDLE_STEP = 10; // секунд без изменения цены — ровный шаг вперёд
 const FLUSH_MS = 250; // экрану хватает четырёх обновлений в секунду
 const lines = new Map<string, Point[]>();
@@ -46,14 +46,20 @@ export function useSecondLine(coin: string): Point[] {
       if (after !== before) { lines.set(coin, after); dirty = true; }
     };
     if (!lines.get(coin)?.length) {
-      api.trades(coin).then((d) => {
+      // история, как у Bybit: часы до открытия экрана — по закрытиям минутных свечей, последние сделки — точно
+      Promise.allSettled([api.chart(coin, "1m"), api.trades(coin)]).then(([c, t]) => {
         if (!alive) return;
-        const seed = priceChanges(d.trades);
+        const ticks = t.status === "fulfilled" ? priceChanges(t.value.trades) : [];
+        const minutes = c.status === "fulfilled"
+          ? c.value.time.flatMap((tm, i) => (c.value.close[i] == null ? [] : [{ time: tm + 59, value: c.value.close[i]! }]))
+          : [];
         const now = lines.get(coin) ?? [];
+        const firstTick = ticks[0]?.time ?? now[0]?.time ?? Infinity;
+        const seed = [...minutes.filter((m) => m.time < firstTick), ...ticks];
         const first = now[0]?.time ?? Infinity;
-        lines.set(coin, [...seed.filter((s) => s.time < first), ...now]);
+        lines.set(coin, [...seed.filter((s) => s.time < first), ...now].slice(-MAX_POINTS));
         dirty = true;
-      }, () => { /* без истории линия начнётся с первой сделки */ });
+      });
     }
     const offs = feed ? [
       feed.subscribe(`publicTrade.${coin}USDT`, (d) => {

@@ -9,9 +9,9 @@ import { useSecondLine } from "./seconds";
 import { Card, Empty, Skeleton } from "./ui";
 
 const ZONE = utcOffsetLabel(-new Date().getTimezoneOffset()); // часовой пояс телефона
-const TF_KEY = "chart_tf", EMA_KEY = "chart_ema";
+const TF_KEY = "chart_tf", EMA_KEY = "chart_ema", VOL_KEY = "chart_vol";
 type Tf = Interval | "1s";
-const TFS: [Tf, string][] = [["1s", "1с"], ...INTERVALS];
+const TFS: [Tf, string][] = [["1s", "Срок"], ...INTERVALS]; // «Срок» — линия по сделкам, как у Bybit
 
 function usePref<T extends string>(key: string, allowed: readonly T[], fallback: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
@@ -30,6 +30,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   const seconds = tf === "1s";
   const interval: Interval = seconds ? "1m" : tf; // для «1с» свечи не нужны, но хуки вызываем всегда
   const [emaOn, setEma] = usePref<"on" | "off">(EMA_KEY, ["on", "off"], "on");
+  const [volOn, setVol] = usePref<"on" | "off">(VOL_KEY, ["on", "off"], "off");
   const { bars, error, loadMore } = useCandles(coin, interval);
   const live = useLiveCandle(coin, seconds ? "" : STREAM_CODE[interval]);
   const line = useSecondLine(seconds ? coin : "");
@@ -44,7 +45,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   if (seconds) {
     body = line.length ? <SecondChart points={line} /> : <Skeleton height="100%" />;
   } else if (shown?.length) {
-    body = <CandleChart bars={shown} interval={interval} kind="candles" emas={emas} position={position} onNeedMore={loadMore} />;
+    body = <CandleChart bars={shown} interval={interval} kind="candles" emas={emas} volume={volOn === "on"} position={position} onNeedMore={loadMore} />;
   } else if (error) {
     body = <Empty title="График не загрузился">{error}</Empty>;
   } else {
@@ -64,6 +65,8 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
           <div className="chart-switches">
             <button aria-pressed={emaOn === "on"} className={emaOn === "on" ? "on" : undefined}
               onClick={() => setEma(emaOn === "on" ? "off" : "on")}>EMA</button>
+            <button aria-pressed={volOn === "on"} className={volOn === "on" ? "on" : undefined}
+              onClick={() => setVol(volOn === "on" ? "off" : "on")}>Объём</button>
           </div>
         )}
       </div>
