@@ -652,6 +652,48 @@ class Bot:
         self.notify(text)
         return text
 
+    # --- ручная торговля, как на бирже: эти монеты бот не ведёт и не продаёт --------
+    def tradable_coins(self) -> list[str]:
+        return [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)]
+
+    def manual_order(self, coin: str, side: str, usdt: float | None = None, qty: float | None = None) -> str:
+        """Рыночная покупка или продажа на споте по сумме в USDT или количеству монеты.
+        Продать можно только своё — то, что держит бот, он продаёт сам (или «Закрыть позицию»)."""
+        coin = coin.upper()
+        if coin not in self.tradable_coins():
+            raise ValueError(f"монета {coin} не поддерживается")
+        if side not in ("buy", "sell"):
+            raise ValueError("сторона: buy или sell")
+        if (usdt is None) == (qty is None):
+            raise ValueError("укажите сумму в USDT или количество монеты")
+        amount = usdt if usdt is not None else qty
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
+            raise ValueError("сумма должна быть больше нуля")
+        with self.lock:
+            sym = self.symbol(coin)
+            inst = self.ex.instrument(sym)
+            price = self.ex.last_price(sym)
+            want = Decimal(str(qty)) if qty is not None else Decimal(str(usdt / price))
+            if side == "buy":
+                free = self.ex.balance("USDT")
+                want = min(want, Decimal(str(free * 0.995 / price)))  # запас на комиссию и движение цены
+            else:
+                bot = self.store.position(coin)
+                mine = self.ex.balance(coin) - (bot.qty if bot else 0.0)
+                if mine <= 0:
+                    raise ValueError(f"своих {coin} на счёте нет" + (" — эту монету держит бот" if bot else ""))
+                want = min(want, Decimal(str(mine)))
+            q = inst.floor_qty(float(want))
+            if q <= 0 or q * Decimal(str(price)) < inst.min_amount:
+                raise ValueError(f"сумма меньше минимальной для ордера: {inst.min_amount} USDT")
+            fill = self.ex.market_buy(sym, coin, q) if side == "buy" else self.ex.market_sell(sym, q)
+            self.store.add_order(coin, side, fill.qty, fill.avg_price, fill.order_id)
+            word = "Куплено" if side == "buy" else "Продано"
+            text = f"{'🛒' if side == 'buy' else '💵'} {word} {fill.qty:g} {coin} по {fmt(fill.avg_price)} " \
+                   f"(≈{fill.qty * fill.avg_price:,.2f} USDT) — вручную, бот эту сделку не ведёт"
+            self.store.log(text)
+            return text
+
     def close_all(self, reason: str = "manual") -> list[str]:
         return [self.close(p.coin, reason) for p in self.store.positions()]
 
@@ -728,7 +770,8 @@ class Bot:
             "settings_defaults": self.defaults,
             "paper_start_usdt": self.cfg.paper_start_usdt,
             "settings_limits": {k: {"min": lo, "max": hi} for k, (_, lo, hi) in LIMITS.items()},
-            "all_coins": [*COINS, *(c for c in self.defaults["coins"] if c not in COINS)],
+            "all_coins": self.tradable_coins(),
+            "orders": self.store.orders(50),
             "equity_history": self.store.equity_history(now() - 90 * 86400),
             "last_scan": self.store.get("last_scan"),
         }

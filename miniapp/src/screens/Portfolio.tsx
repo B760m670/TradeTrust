@@ -15,9 +15,10 @@ const SLICE_COLORS: Record<Theme, string[]> = {
   light: ["#6c5cf0", "#eb6834", "#2a78d6", "#eda100", "#e87ba4"],
 };
 
-function usePortfolio() {
+export function usePortfolio() {
   const [data, setData] = useState<PortfolioData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     let alive = true;
     const load = () => api.portfolio().then(
@@ -27,12 +28,12 @@ function usePortfolio() {
     void load();
     const timer = setInterval(() => document.visibilityState === "visible" && void load(), REFRESH_MS);
     return () => { alive = false; clearInterval(timer); };
-  }, []);
-  return { data, error };
+  }, [tick]);
+  return { data, error, reload: () => setTick((t) => t + 1) };
 }
 
 /** Стоимость активов по живым ценам, если они есть. */
-function withLive(assets: Asset[], prices: Record<string, { price: number }>): Asset[] {
+export function withLive(assets: Asset[], prices: Record<string, { price: number }>): Asset[] {
   return assets.map((a) => {
     const live = !a.stable ? prices[a.coin]?.price : undefined;
     return live ? { ...a, price: live, value: a.qty * live } : a;
@@ -41,7 +42,7 @@ function withLive(assets: Asset[], prices: Record<string, { price: number }>): A
 
 const qtyFmt = (x: number) => x.toLocaleString("ru-RU", { maximumFractionDigits: x >= 100 ? 2 : 6 });
 
-export function Portfolio() {
+export function Portfolio({ embedded }: { embedded?: boolean }) {
   const { data, error } = usePortfolio();
   const { theme } = useTheme();
   const coins = (data?.assets ?? []).filter((a) => !a.stable).map((a) => a.coin);
@@ -49,7 +50,7 @@ export function Portfolio() {
 
   if (!data) {
     return error
-      ? <Empty icon={<AlertIcon size={28} />} title="Портфель не загрузился">{error}</Empty>
+      ? <Empty icon={<AlertIcon size={28} />} title="Активы не загрузились">{error}</Empty>
       : <div className="loading"><Skeleton height={14} width={120} /><Skeleton height={52} width="70%" /><Skeleton height={120} /><Skeleton height={260} /></div>;
   }
 
@@ -65,10 +66,12 @@ export function Portfolio() {
 
   return (
     <div className="portfolio">
-      <header className="page-head">
-        <h1>Портфель <LiveBadge on={Object.keys(tickers).length > 0} /></h1>
-        <span className="muted">Всё, что лежит на счёте Bybit, а не только часть бота</span>
-      </header>
+      {!embedded && (
+        <header className="page-head">
+          <h1>Активы <LiveBadge on={Object.keys(tickers).length > 0} /></h1>
+          <span className="muted">Всё, что лежит на счёте, а не только часть бота</span>
+        </header>
+      )}
 
       <div className="portfolio-grid">
         <div className="settings-col">
@@ -110,8 +113,8 @@ export function Portfolio() {
               <Tile label="Ваше" value={`${usd(mine)} $`} hint={`${pct(share(mine))} счёта · бот не трогает`} />
             </div>
             <p className="footnote">
-              Бот распоряжается только своим капиталом и монетами, которые купил сам. Остальное на счёте он не продаёт
-              и не использует. Капитал бота меняется в «Настройках».
+              Бот распоряжается только своим капиталом и монетами, которые купил сам. То, что вы купили на «Торговать»,
+              он не продаёт и не использует. Капитал бота меняется в настройках бота.
             </p>
           </Card>
         </div>

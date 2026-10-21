@@ -9,23 +9,29 @@ import { haptic } from "../telegram";
 
 const BAR_SECONDS = 4 * 3600;
 
-export function Signals({ status: s, onOpenCoin }: { status: Status; onOpenCoin: (coin: string) => void }) {
+/** «Рынки», как у бирж: все пары спота с ценой и изменением за сутки, поиск, фильтры по сигналу бота. */
+export function Markets({ status: s, onOpenCoin }: { status: Status; onOpenCoin: (coin: string) => void }) {
   const [filter, setFilter] = useState<SignalFilter>("all");
+  const [query, setQuery] = useState("");
   const now = useNow();
   const tickers = useLiveTickers();
   const all = signalRows(s.signals, new Set(s.positions.map((p) => p.coin)));
-  const rows = filterRows(all, filter);
+  const q = query.trim().toUpperCase();
+  const rows = filterRows(all, filter).filter((r) => !q || r.coin.includes(q));
   const counts = Object.fromEntries(SIGNAL_FILTERS.map(([f]) => [f, filterRows(all, f).length]));
 
   return (
     <div className="signals">
       <header className="page-head">
-        <h1>Сигналы <LiveBadge on={Object.keys(tickers).length > 0} /></h1>
+        <h1>Рынки <LiveBadge on={Object.keys(tickers).length > 0} /></h1>
         <span className="muted">
-          {s.last_bar ? `Свеча закрылась ${dateTime(s.last_bar + BAR_SECONDS)}` : "Ждём закрытия первой свечи"}
+          Спот Bybit · сигналы бота: {s.last_bar ? `свеча закрылась ${dateTime(s.last_bar + BAR_SECONDS)}` : "ждём первой свечи"}
           {" · "}следующая в {clock(nextCandleClose(now))}
         </span>
       </header>
+
+      <input className="admin-search" type="search" placeholder="Поиск монеты" value={query}
+        onChange={(e) => setQuery(e.target.value)} aria-label="Поиск монеты" />
 
       <div className="filters" role="tablist" aria-label="Фильтр">
         {SIGNAL_FILTERS.map(([f, label]) => (
@@ -40,7 +46,7 @@ export function Signals({ status: s, onOpenCoin }: { status: Status; onOpenCoin:
         <div className="sig-row sig-head" aria-hidden="true">
           <span>Монета</span><span>Цена</span><span className="col-wide">24 ч</span>
           <span className="col-wide">EMA {s.settings.ema_fast}/{s.settings.ema_slow}</span>
-          <span className="col-wide">ATR</span><span>Состояние</span>
+          <span className="col-wide">ATR</span><span>Сигнал бота</span>
         </div>
         {rows.map(({ coin, signal, state }, i) => {
           const gap = emaGap(signal);

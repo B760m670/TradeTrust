@@ -64,7 +64,9 @@ const editableOf = (s: Status): EditableSettings => {
   return rest;
 };
 
-export function Settings({ status: s, busy, act }: { status: Status; busy: boolean; act: Act }) {
+/** scope "app" — настройки приложения (оформление, сводка); "bot" — настройки трендового бота. */
+export function Settings({ status: s, busy, act, scope }: { status: Status; busy: boolean; act: Act; scope: "app" | "bot" }) {
+  const isBot = scope === "bot";
   const saved = editableOf(s);
   const [edits, setEdits] = useState<Partial<EditableSettings>>({});
   const draft: EditableSettings = { ...saved, ...edits };
@@ -98,17 +100,28 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
   return (
     <div className="settings">
       <header className="page-head">
-        <h1>Настройки</h1>
-        <span className="muted">Оформление, режим и лимиты бота</span>
+        <h1>{isBot ? "Настройки бота" : "Настройки"}</h1>
+        <span className="muted">{isBot ? "Трендовый бот: режим, риск, лимиты и монеты" : "Оформление и уведомления"}</span>
       </header>
 
       <div className="settings-grid">
+        {!isBot && (
         <div className="settings-col">
           <Card title="Оформление">
             <ThemePicker />
             <p className="footnote">«Авто» — как тема Telegram. Выбор сохраняется для всех ваших устройств.</p>
           </Card>
+          <Card title="Счёт" aside={<EnvChip status={s} />}>
+            <p className="footnote">
+              {s.account === "demo" ? "Демо-счёт: виртуальные деньги по настоящим ценам Bybit."
+                : "Счёт Bybit, к которому подключён бот. Переключение демо и реального счёта появится следующим шагом."}
+            </p>
+          </Card>
+        </div>
+        )}
 
+        {isBot && (
+        <div className="settings-col">
           <Card title="Бот" aside={<EnvChip status={s} />}>
             <ModeSwitch status={s} busy={busy} act={act} />
             <div className="side-row">
@@ -146,7 +159,9 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
             <p className="footnote">Параметры системы проверены на истории и меняются только в .env на сервере.</p>
           </Card>
         </div>
+        )}
 
+        {isBot && (
         <div className="settings-col">
           <Card title="Риск и лимиты">
             <div>
@@ -222,6 +237,7 @@ export function Settings({ status: s, busy, act }: { status: Status; busy: boole
             {s.account === "demo" ? "Сбросить к значениям по умолчанию" : "Сбросить к значениям из .env"}
           </button>
         </div>
+        )}
       </div>
 
       {dirty && (

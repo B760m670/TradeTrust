@@ -7,7 +7,7 @@ import { REASONS, journalStats, maxDrawdown } from "../logic";
 
 const nf = (x: number) => x.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function Journal({ status: s }: { status: Status }) {
+export function Journal({ status: s, embedded }: { status: Status; embedded?: boolean }) {
   const st = journalStats(s.trades);
   const total = Math.round(s.equity.total * 100) / 100;
   // история с сервера плюс текущий капитал (с живыми ценами) последней точкой
@@ -21,12 +21,14 @@ export function Journal({ status: s }: { status: Status }) {
   const change = values.length > 1 ? (values[values.length - 1] / values[0] - 1) * 100 : null;
   return (
     <div className="journal">
-      <header className="page-head">
-        <h1>Журнал</h1>
-        <span className="muted">Закрытые сделки и всё, что делал бот</span>
-      </header>
+      {!embedded && (
+        <header className="page-head">
+          <h1>Журнал</h1>
+          <span className="muted">Закрытые сделки и всё, что делал бот</span>
+        </header>
+      )}
 
-      <Card title="Капитал" className="equity-card" aside={change == null ? undefined
+      <Card title="Капитал бота" className="equity-card" aside={change == null ? undefined
         : <span className={`pill pill-${tone(change)}`}>{pct(change, true)} за {Math.max(1, Math.round((points[points.length - 1][0] - points[0][0]) / 86400))} дн.</span>}>
         {points.length > 1
           ? <div className="equity-area"><EquityChart points={points} /></div>
@@ -48,7 +50,7 @@ export function Journal({ status: s }: { status: Status }) {
       </div>
 
       <div className="journal-grid">
-        <Card title="Сделки" className="trades">
+        <Card title="Сделки бота" className="trades">
           {s.trades.length === 0 && <Empty title="Закрытых сделок пока нет" />}
           <div className="list">
             {s.trades.map((t, i) => (
@@ -70,7 +72,7 @@ export function Journal({ status: s }: { status: Status }) {
           <p className="footnote">R — результат в долях риска: +2R — заработали вдвое больше, чем рисковали.</p>
         </Card>
 
-        <Card title="События" className="events">
+        <Card title="Действия бота" className="events">
           {s.events.length === 0 && <Empty title="Событий пока нет" />}
           <ol className="timeline">
             {s.events.slice(0, 30).map((e, i) => (

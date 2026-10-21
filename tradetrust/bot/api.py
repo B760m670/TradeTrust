@@ -183,6 +183,14 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                         return self._send(400, {"error": f"mode: {MODES}"})
                     bot.set_mode(mode)
                     return self._send(200, {"message": f"режим {mode}"})
+                if parts == ["api", "order"]:
+                    body = self._body()
+                    try:
+                        msg = bot.manual_order(str(body.get("coin", "")), str(body.get("side", "")),
+                                               usdt=body.get("usdt"), qty=body.get("qty"))
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
+                    return self._send(200, {"message": msg})
                 if parts == ["api", "pause"]:
                     bot.pause("из приложения")
                     return self._send(200, {"message": "пауза"})

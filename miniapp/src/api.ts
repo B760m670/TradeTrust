@@ -114,6 +114,7 @@ export interface Status {
   all_coins: string[];
   equity_history: [number, number][]; // [время, капитал] после каждой 4ч свечи
   last_scan: Scan | null;
+  orders?: ManualOrder[];
   /** true — это владелец: ему видна админка */
   admin?: boolean;
 }
@@ -138,6 +139,17 @@ export interface BtcTrend {
   price?: number;
   avg?: number;
   error?: string;
+}
+
+/** Ручная сделка на «Торговать» (бот её не ведёт). */
+export interface ManualOrder {
+  id: number;
+  ts: number;
+  coin: string;
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  usdt: number;
 }
 
 export interface ChartData {
@@ -204,6 +216,7 @@ export const api = {
   resume: () => request<Message>("/api/resume", "POST"),
   close: (coin: string) => request<Message>(`/api/positions/${coin}/close`, "POST"),
   saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
+  order: (coin: string, side: "buy" | "sell", usdt: number) => request<Message>("/api/order", "POST", { coin, side, usdt }),
   admin: () => request<AdminData>("/api/admin"),
   saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),
   userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>

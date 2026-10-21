@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS trades (
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, level TEXT, text TEXT);
 CREATE TABLE IF NOT EXISTS equity (ts INTEGER PRIMARY KEY, total REAL);
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, coin TEXT, side TEXT, qty REAL, price REAL, usdt REAL, order_id TEXT
+);
 """
 
 
@@ -152,6 +155,14 @@ class Store:
     def equity_before(self, ts: int) -> float | None:
         rows = self._all("SELECT total FROM equity WHERE ts <= ? ORDER BY ts DESC LIMIT 1", ts)
         return float(rows[0]["total"]) if rows else None
+
+    # --- ручные сделки (не бота) -------------------------------------------------
+    def add_order(self, coin: str, side: str, qty: float, price: float, order_id: str = "") -> None:
+        self._exec("INSERT INTO orders(ts, coin, side, qty, price, usdt, order_id) VALUES(?,?,?,?,?,?,?)",
+                   now(), coin, side, qty, price, qty * price, order_id)
+
+    def orders(self, limit: int = 50) -> list[dict]:
+        return [dict(r) for r in self._all("SELECT * FROM orders ORDER BY id DESC LIMIT ?", limit)]
 
     def log(self, text: str, level: str = "info") -> None:
         self._exec("INSERT INTO events(ts, level, text) VALUES(?, ?, ?)", now(), level, text)
