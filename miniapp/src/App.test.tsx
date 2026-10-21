@@ -7,7 +7,7 @@ vi.mock("./components/CandleChart", () => ({
   CandleChart: () => <div data-testid="chart" />,
   useChartColors: () => ({ fast: "#00f", slow: "#fa0", down: "#f00" }),
 }));
-vi.mock("./components/TickChart", () => ({ TickChart: () => <div data-testid="tick-chart" /> }));
+vi.mock("./components/LineChart", () => ({ LineChart: () => <div data-testid="line-chart" /> }));
 vi.mock("./components/EquityChart", () => ({ EquityChart: () => <div data-testid="equity-chart" /> }));
 
 const PORTFOLIO = {
@@ -165,9 +165,10 @@ describe("mini app", () => {
     fireEvent.click(screen.getByRole("radio", { name: "1ч" }));
     await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=1h")).toBe(true));
     await screen.findByText(/бот решает по 4ч/);
-    fireEvent.click(screen.getByRole("radio", { name: "1с" }));
-    expect(screen.getByTestId("tick-chart")).toBeTruthy();
-    expect(localStorage.getItem("chart_tf")).toBe("1s");
+    fireEvent.click(screen.getByRole("radio", { name: "Линия" }));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/candles?coin=SOL&interval=1m")).toBe(true));
+    expect(await screen.findByTestId("line-chart")).toBeTruthy();
+    expect(localStorage.getItem("chart_tf")).toBe("line");
     fireEvent.click(screen.getByRole("button", { name: "Сигналы" }));
     await screen.findByText("Состояние");
   });
