@@ -37,8 +37,8 @@ export type ChartKind = "candles" | "line";
 const ts = (t: number) => t as UTCTimestamp;
 
 /** Свечной график, как на бирже: свечи или линия, объём, EMA, вход и стоп бота, живая свеча, история назад. */
-export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }: {
-  bars: Bar[]; interval: Interval; kind: ChartKind; emas: [number, number] | null;
+export function CandleChart({ bars, interval, kind, emas, volume = false, position, onNeedMore }: {
+  bars: Bar[]; interval: Interval; kind: ChartKind; emas: [number, number] | null; volume?: boolean;
   position: { entry: number; stop: number } | null; onNeedMore?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -64,7 +64,7 @@ export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }
         fontFamily: "'Manrope Variable', system-ui, sans-serif", attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       crosshair: { vertLine: { color: fast, labelBackgroundColor: fast }, horzLine: { color: fast, labelBackgroundColor: fast } },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.22 } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: volume ? 0.22 : 0.08 } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMark, rightOffset: 4 },
       localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p, refPrice.current ?? p),
         timeFormatter: crosshairTime(!["1d", "1w"].includes(interval)) },
@@ -73,7 +73,9 @@ export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }
     main.current = kind === "candles"
       ? chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false })
       : chart.addSeries(AreaSeries, { lineColor: fast, topColor: `${fast}55`, bottomColor: `${fast}00`, lineWidth: 2 });
-    vol.current = chart.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+    // объём — по кнопке «Объём», как индикатор у бирж; по умолчанию график только из свечей
+    vol.current = chart.addSeries(HistogramSeries, { priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false,
+      priceLineVisible: false, visible: volume });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
     chartRef.current = chart;
     shown.current = [];
@@ -88,7 +90,7 @@ export function CandleChart({ bars, interval, kind, emas, position, onNeedMore }
       lines.current = [];
       shown.current = [];
     };
-  }, [interval, kind, theme]);
+  }, [interval, kind, theme, volume]);
 
   // данные: живая свеча — точечное обновление, подгруженная история — с сохранением того, что видно
   useEffect(() => {
