@@ -13,7 +13,6 @@ export interface Point {
 
 const MAX_POINTS = 3000;
 export const IDLE_STEP = 10; // секунд без изменения цены — ровный шаг вперёд
-const FLUSH_MS = 250; // экрану хватает четырёх обновлений в секунду
 const lines = new Map<string, Point[]>();
 
 /** Добавить цену: точка только если цена изменилась (или same — ровный шаг). Время всегда растёт. */
@@ -38,12 +37,17 @@ export function useSecondLine(coin: string): Point[] {
 
   useEffect(() => {
     if (!coin) return; // линия выключена
-    let alive = true, dirty = false;
+    let alive = true, frame = 0;
     setPoints(lines.get(coin) ?? []);
+    // каждая сделка — на экран в ближайшем кадре (~16 мс), а не пачкой: линия идёт за ценой без рывков
+    const show = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; if (alive) setPoints(lines.get(coin) ?? []); });
+    };
     const put = (timeSec: number, value: number, same = false) => {
       const before = lines.get(coin) ?? [];
       const after = addPrice(before, timeSec, value, same);
-      if (after !== before) { lines.set(coin, after); dirty = true; }
+      if (after !== before) { lines.set(coin, after); show(); }
     };
     if (!lines.get(coin)?.length) {
       // история, как у Bybit: часы до открытия экрана — по закрытиям минутных свечей, последние сделки — точно
@@ -58,7 +62,7 @@ export function useSecondLine(coin: string): Point[] {
         const seed = [...minutes.filter((m) => m.time < firstTick), ...ticks];
         const first = now[0]?.time ?? Infinity;
         lines.set(coin, [...seed.filter((s) => s.time < first), ...now].slice(-MAX_POINTS));
-        dirty = true;
+        show();
       });
     }
     const offs = feed ? [
@@ -75,10 +79,10 @@ export function useSecondLine(coin: string): Point[] {
       const last = lines.get(coin)?.at(-1);
       const now = Date.now() / 1000;
       if (last && now - last.time >= IDLE_STEP) put(now, last.value, true);
-      if (dirty) { dirty = false; setPoints(lines.get(coin) ?? []); }
-    }, FLUSH_MS);
+    }, 1000);
     return () => {
       alive = false;
+      cancelAnimationFrame(frame);
       clearInterval(timer);
       offs.forEach((off) => off());
     };
