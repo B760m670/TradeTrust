@@ -2,6 +2,7 @@
 import { useEffect, useRef, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
 import type { Position } from "../api";
 import { useAnimatedNumber } from "../hooks";
+import { useFeedLag } from "../live";
 import { price, usd, type Tone } from "../format";
 import { rangeMarks, type ChipTone } from "../logic";
 import { haptic } from "../telegram";
@@ -182,5 +183,13 @@ export function Flash({ value, children, className }: { value: number | undefine
 
 /** «Онлайн»: цены приходят с биржи в реальном времени. */
 export function LiveBadge({ on }: { on: boolean }) {
-  return on ? <span className="live-badge" title="Цены обновляются с биржи в реальном времени"><StatusDot tone="up" />онлайн</span> : null;
+  const lag = useFeedLag();
+  if (!on) return null;
+  const slow = lag != null && lag > 2000;
+  const label = lag == null ? "онлайн" : slow ? `задержка ${(lag / 1000).toFixed(1).replace(".", ",")} с` : `онлайн · ${lag} мс`;
+  return (
+    <span className={`live-badge${slow ? " slow" : ""}`} title="Сколько идёт цена от биржи Bybit до телефона">
+      <StatusDot tone={slow ? "amber" : "up"} />{label}
+    </span>
+  );
 }

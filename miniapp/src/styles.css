@@ -830,3 +830,4 @@ h3.section-title { margin: 22px 0 10px; }
 .chart-switches button.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
 .chart-area { height: 340px; }
 .chart-card.tall .chart-area { height: 460px; }
+.live-badge.slow { background: var(--amber-soft); color: var(--amber); }
