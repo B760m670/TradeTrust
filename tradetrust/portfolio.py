@@ -53,7 +53,9 @@ def prepare(candles: dict[str, pd.DataFrame], p: bt.Params, rules: Rules) -> dic
 
 
 def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd.Timestamp,
-        capital: float = 1.0) -> tuple[pd.Series, list[dict]]:
+        capital: float = 1.0, risk_mult: pd.Series | None = None) -> tuple[pd.Series, list[dict]]:
+    """risk_mult — множитель риска новых сделок по времени свечи сигнала (обстановка на рынке):
+    1 — как обычно, 0,5 — вдвое меньше, 0 — не входить. Значение берётся на закрытии свечи сигнала."""
     index = sorted(set().union(*(d.index[d.index >= start] for d in prepared.values())))
     frames = {c: d.reindex(index) for c, d in prepared.items()}
     coins = list(frames)
@@ -62,12 +64,14 @@ def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd
     cross = np.column_stack([frames[c]["cross_up"].fillna(False).to_numpy(dtype=bool) for c in coins])
     down = np.column_stack([frames[c]["trend_down"].fillna(False).to_numpy(dtype=bool) for c in coins])
     long_ok = (c > col("long_sma")) if rules.long_trend_days else np.ones_like(c, dtype=bool)
+    mult = (risk_mult.reindex(pd.DatetimeIndex(index), method="ffill").fillna(1.0).to_numpy()
+            if risk_mult is not None else np.ones(len(index)))
 
     cash = capital
     pos: dict[int, Position] = {}
     trades: list[dict] = []
     pending_exit: set[int] = set()
-    pending_entry: list[tuple[int, float]] = []  # (монета, расстояние до стопа)
+    pending_entry: list[tuple[int, float, float]] = []  # (монета, расстояние до стопа, множитель риска)
     last_close = np.full(len(coins), np.nan)
     equity = np.empty(len(index))
 
@@ -88,11 +92,11 @@ def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd
                 close(j, o[i, j], t, "signal")
         pending_exit = set()
         eq_now = value()
-        for j, dist in pending_entry:
-            if j in pos or np.isnan(o[i, j]) or dist <= 0 or len(pos) >= rules.max_positions:
+        for j, dist, k in pending_entry:
+            if j in pos or np.isnan(o[i, j]) or dist <= 0 or k <= 0 or len(pos) >= rules.max_positions:
                 continue
             open_risk = sum(q.qty * max(0.0, q.entry - q.stop) for q in pos.values())
-            risk_budget = min(eq_now * rules.risk, eq_now * rules.max_total_risk - open_risk)
+            risk_budget = min(eq_now * rules.risk * k, eq_now * rules.max_total_risk - open_risk)
             if risk_budget <= 0:
                 continue
             qty = min(risk_budget / dist, eq_now * rules.max_position_pct / o[i, j], cash / (o[i, j] * (1 + rules.fee)))
@@ -126,7 +130,7 @@ def run(prepared: dict[str, pd.DataFrame], p: bt.Params, rules: Rules, start: pd
             candidates = [j for j in candidates if j in top]
         if rules.rank_entries:
             candidates.sort(key=lambda j: -(mom[i, j] if not np.isnan(mom[i, j]) else -np.inf))
-        pending_entry = [(j, p.atr_mult * atr_v[i, j]) for j in candidates]
+        pending_entry = [(j, p.atr_mult * atr_v[i, j], mult[i]) for j in candidates]
         equity[i] = value()
 
     return pd.Series(equity, index=pd.DatetimeIndex(index)), trades
