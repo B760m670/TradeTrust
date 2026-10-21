@@ -18,6 +18,7 @@ export const BookIcon = (p: P) => (
   <Icon {...p}><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="14" y2="13" /></Icon>
 );
 export const PauseIcon = (p: P) => <Icon {...p}><line x1="9" y1="5" x2="9" y2="19" /><line x1="15" y1="5" x2="15" y2="19" /></Icon>;
+export const PowerIcon = (p: P) => <Icon {...p}><path d="M18.4 6.6a9 9 0 1 1-12.8 0" /><line x1="12" y1="2" x2="12" y2="12" /></Icon>;
 export const PlayIcon = (p: P) => <Icon {...p}><polygon points="7 4 20 12 7 20 7 4" /></Icon>;
 export const BackIcon = (p: P) => <Icon {...p}><polyline points="15 18 9 12 15 6" /></Icon>;
 export const ChevronIcon = (p: P) => <Icon {...p}><polyline points="9 18 15 12 9 6" /></Icon>;

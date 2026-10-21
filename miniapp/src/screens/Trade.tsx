@@ -2,7 +2,8 @@ import { useState } from "react";
 import { api, type Status } from "../api";
 import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
-import { ChevronIcon, CloseIcon } from "../components/icons";
+import { ChevronIcon } from "../components/icons";
+import { Sheet } from "../components/Sheet";
 import { Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Segmented, Tile, Value } from "../components/ui";
 import { chartPrice, dateTime, pct, price, tone, usd } from "../format";
 import { useLiveTickers } from "../live";
@@ -48,7 +49,7 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           <span className="pair-name"><strong>{coin}</strong><span className="muted">/USDT</span></span>
           <ChevronIcon size={18} />
         </button>
-        <Chip tone="muted">Спот</Chip>
+        <Chip tone={s.env === "mainnet" ? "down" : "muted"}>Спот</Chip>{/* красный — реальный счёт */}
         <div className="row-end">
           <Flash value={now} className="coin-price num">{now == null ? "—" : chartPrice(now)}</Flash>
           <span className={`small num tone-${ticker ? tone(ticker.change24h) : "neutral"}`}>
@@ -77,7 +78,8 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           onSide={setSide} onClose={() => setSide(null)}
           onSubmit={async (usdt) => {
             const word = side === "buy" ? "Купить" : "Продать";
-            if (!(await confirmAction(`${word} ${coin} на ${usd(usdt)} $ по рынку?`))) return;
+            const real = s.env === "mainnet" ? "РЕАЛЬНЫЙ счёт, настоящие деньги. " : "";
+            if (!(await confirmAction(`${real}${word} ${coin} на ${usd(usdt)} $ по рынку?`))) return;
             if (await act(() => api.order(coin, side, usdt))) {
               setSide(null);
               setPanel("orders");
@@ -183,20 +185,6 @@ function Indicators({ coin, status: s }: { coin: string; status: Status }) {
         <Tile label="Монета" value={coin} hint={coinState(sig, false).label} />
       </div>
     </Card>
-  );
-}
-
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <header className="sheet-head">
-          <strong>{title}</strong>
-          <button className="icon-btn btn btn-ghost" aria-label="Закрыть" onClick={onClose}><CloseIcon /></button>
-        </header>
-        {children}
-      </div>
-    </div>
   );
 }
 

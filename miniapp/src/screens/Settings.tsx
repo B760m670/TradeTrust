@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type EditableSettings, type NumericSetting, type Status } from "../api";
-import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
+import { AccountList, switchAccount } from "../components/Account";
+import { BotPowerButton, BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { Stepper, Switch } from "../components/controls";
 import { CheckIcon } from "../components/icons";
 import { Button, Card } from "../components/ui";
@@ -112,10 +113,14 @@ export function Settings({ status: s, busy, act, scope }: { status: Status; busy
             <p className="footnote">«Авто» — как тема Telegram. Выбор сохраняется для всех ваших устройств.</p>
           </Card>
           <Card title="Счёт" aside={<EnvChip status={s} />}>
-            <p className="footnote">
-              {s.account === "demo" ? "Демо-счёт: виртуальные деньги по настоящим ценам Bybit."
-                : "Счёт Bybit, к которому подключён бот. Переключение демо и реального счёта появится следующим шагом."}
-            </p>
+            {s.accounts ? (
+              <AccountList status={s} onPick={(a) => void switchAccount(s, a, act)} />
+            ) : (
+              <p className="footnote">
+                {s.account === "demo" ? "Демо-счёт: виртуальные деньги по настоящим ценам Bybit."
+                  : "Счёт Bybit, к которому подключён бот."}
+              </p>
+            )}
           </Card>
         </div>
         )}
@@ -126,9 +131,13 @@ export function Settings({ status: s, busy, act, scope }: { status: Status; busy
             <ModeSwitch status={s} busy={busy} act={act} />
             <div className="side-row">
               <BotState status={s} />
-              <PauseButton status={s} busy={busy} act={act} />
+              {s.enabled !== false && <PauseButton status={s} busy={busy} act={act} />}
+              <BotPowerButton status={s} busy={busy} act={act} />
             </div>
-            <p className="footnote">Выходы по сигналу и стопы работают в любом режиме и на паузе.</p>
+            <p className="footnote">
+              Выходы по сигналу и стопы работают в любом режиме, на паузе и у выключенного бота.
+              {s.env === "mainnet" && " На реальном счёте бот включается, только когда задан его капитал (ниже, «Риск и лимиты»)."}
+            </p>
           </Card>
 
           <Card title="Ежедневная сводка">

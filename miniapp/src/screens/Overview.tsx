@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { api, type BtcTrend, type Position, type Proposal, type Scan, type Status } from "../api";
 import type { Tab } from "../App";
-import { BotState, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
+import { BotPowerButton, BotState, ModeSwitch, PauseButton, type Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon, GearIcon } from "../components/icons";
 import { BigMoney, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, StatusDot, Tile, Value } from "../components/ui";
@@ -175,7 +175,7 @@ export function Overview({ status: s, busy, act, wide, onOpenCoin, onTab, onSett
       {!wide && (
         <div className="controls">
           <ModeSwitch status={s} busy={busy} act={act} />
-          <PauseButton status={s} busy={busy} act={act} compact />
+          {s.enabled === false ? <BotPowerButton status={s} busy={busy} act={act} /> : <PauseButton status={s} busy={busy} act={act} compact />}
         </div>
       )}
 

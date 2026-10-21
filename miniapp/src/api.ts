@@ -96,8 +96,12 @@ export interface Settings extends EditableSettings {
 
 export interface Status {
   env: Env;
-  /** owner — счёт владельца бота; demo — виртуальный демо-счёт пользователя */
-  account?: "owner" | "demo";
+  /** owner — основной счёт владельца; real — его реальный счёт; demo — виртуальный демо-счёт пользователя */
+  account?: "owner" | "real" | "demo";
+  /** бот торгует на этом счёте; выключенный только доводит открытые позиции */
+  enabled?: boolean;
+  /** счета владельца и какой открыт — только владельцу */
+  accounts?: Accounts;
   mode: Mode;
   paused: string | null;
   equity: Equity;
@@ -117,6 +121,21 @@ export interface Status {
   orders?: ManualOrder[];
   /** true — это владелец: ему видна админка */
   admin?: boolean;
+}
+
+export interface AccountInfo {
+  id: "main" | "real";
+  label: string;
+  env: Env;
+  real: boolean;
+}
+
+export interface Accounts {
+  active: AccountInfo["id"];
+  list: AccountInfo[];
+  /** ключ реального счёта задан в .env (даже если не подключился) */
+  real_configured: boolean;
+  real_error: string;
 }
 
 /** Итог последней проверки рынка (после закрытия 4ч свечи). */
@@ -188,10 +207,20 @@ export class ApiError extends Error {
   }
 }
 
+// Какой счёт владельца на экране. Сервер выполняет действие, только если это всё ещё активный счёт:
+// если его переключили (например, из Telegram), кнопка на старом экране не сработает на другом счёте.
+let shownAccount = "";
+export function setShownAccount(id: string | undefined) {
+  shownAccount = id ?? "";
+}
+
 async function request<T>(path: string, method: "GET" | "POST" = "GET", body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
-    headers: { Authorization: `tma ${initData()}`, "Content-Type": "application/json" },
+    headers: {
+      Authorization: `tma ${initData()}`, "Content-Type": "application/json",
+      ...(shownAccount ? { "X-Account": shownAccount } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -222,6 +251,8 @@ export const api = {
   userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>
     request<Message>(`/api/admin/users/${encodeURIComponent(id)}/${action}`, "POST", {}),
   broadcast: (text: string) => request<Message>("/api/admin/broadcast", "POST", { text }),
+  switchAccount: (account: AccountInfo["id"]) => request<Message>("/api/account", "POST", { account }),
+  setBotEnabled: (enabled: boolean) => request<Message>("/api/bot", "POST", { enabled }),
   resetSettings: () => request<Message>("/api/settings", "POST", { reset: true }),
 };
 

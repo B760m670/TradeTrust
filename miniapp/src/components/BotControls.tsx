@@ -2,7 +2,7 @@
 import { api, type Mode, type Status } from "../api";
 import { ENV_LABELS } from "../logic";
 import { confirmAction } from "../telegram";
-import { PauseIcon, PlayIcon } from "./icons";
+import { PauseIcon, PlayIcon, PowerIcon } from "./icons";
 import { Button, Chip, Segmented, StatusDot } from "./ui";
 
 export type Act = (a: () => Promise<{ message: string }>) => Promise<boolean>;
@@ -29,9 +29,30 @@ export function PauseButton({ status: s, busy, act, compact }: { status: Status;
 }
 
 export function BotState({ status: s }: { status: Status }) {
+  if (s.enabled === false) return <span className="bot-state tone-muted"><StatusDot tone="muted" />Бот выключен</span>;
   return s.paused
     ? <span className="bot-state tone-amber"><StatusDot tone="amber" />Пауза: {s.paused}</span>
     : <span className="bot-state tone-up"><StatusDot tone="up" />Бот работает</span>;
+}
+
+/** Включить или выключить бота на этом счёте. На реальном — с отдельным подтверждением. */
+export function BotPowerButton({ status: s, busy, act }: { status: Status; busy: boolean; act: Act }) {
+  const on = s.enabled !== false;
+  const toggle = async () => {
+    const real = s.env === "mainnet";
+    const cap = s.settings.capital_usdt;
+    const ask = on
+      ? "Выключить бота? Новых сделок не будет, открытые позиции он доведёт до конца: стоп и выход по тренду."
+      : real
+        ? `Бот начнёт торговать на РЕАЛЬНОМ счёте${cap > 0 ? ` в пределах ${cap.toLocaleString("ru-RU")} USDT` : ""}. Включить?`
+        : "Включить бота на этом счёте?";
+    if (await confirmAction(ask)) void act(() => api.setBotEnabled(!on));
+  };
+  return (
+    <Button variant={on ? "ghost" : "primary"} disabled={busy} onClick={() => void toggle()}>
+      <PowerIcon size={18} /><span>{on ? "Выключить" : "Включить"}</span>
+    </Button>
+  );
 }
 
 export function EnvChip({ status: s }: { status: Status }) {

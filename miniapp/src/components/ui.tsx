@@ -142,7 +142,7 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
   return <div className="toast" role="status" onClick={onClose}>{message}</div>;
 }
 
-export function StatusDot({ tone }: { tone: "up" | "amber" | "down" }) {
+export function StatusDot({ tone }: { tone: "up" | "amber" | "down" | "muted" }) {
   return <span className={`dot dot-${tone}`} aria-hidden="true" />;
 }
 

@@ -636,3 +636,19 @@ button.card { text-align: left; width: 100%; }
 .btn-up:disabled, .order-buttons .btn-danger:disabled { opacity: 0.4; }
 .bot-card .tile-value { font-size: 17px; }
 .bot-card .tile { min-width: 0; }
+.chip-btn-account { gap: 2px; border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+.chip-btn-account svg { transform: rotate(90deg); }
+.chip-btn-account:disabled { opacity: 0.6; }
+.account-list { display: flex; flex-direction: column; gap: 6px; }
+.account-list .list-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+  padding: 12px; border-radius: 14px; text-align: left; }
+.account-list .list-row.on { background: var(--accent-soft); }
+.account-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--up); }
+.account-dot.real { background: var(--down); box-shadow: 0 0 0 4px var(--down-soft); }
+.account-hint { margin-top: 6px; padding: 12px; border-radius: 14px; background: var(--surface-2); }
+.account-hint ol { margin: 8px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.account-hint p { margin: 6px 0 0; }
+.account-hint code { font-size: 11px; word-break: break-all; }
+.real-card { border-color: var(--down-soft); }
+.real-card p { margin: 4px 0 0; }
+.tone-muted { color: var(--muted); }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { BotState, EnvChip, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
+import { AccountButton } from "./components/Account";
+import { BotState, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
 import { AlertIcon, CloseIcon, HomeIcon, TrendIcon, WalletIcon, CandleIcon } from "./components/icons";
 import { Empty, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
@@ -56,7 +57,7 @@ function Sidebar({ tab, onTab, status, busy, act, inCoin }: {
           <ModeSwitch status={status} busy={busy} act={act} />
           <BotState status={status} />
           <div className="side-row">
-            <EnvChip status={status} />
+            <AccountButton status={status} busy={busy} act={act} />
             <PauseButton status={status} busy={busy} act={act} />
           </div>
         </div>
@@ -103,7 +104,8 @@ function Main() {
     setFeed(f);
     return () => f.close();
   }, [env]);
-  return <LiveContext.Provider value={feed}><Screens {...bot} /></LiveContext.Provider>;
+  // другой счёт — экраны заново, как у бирж: свои активы, позиции и сделки
+  return <LiveContext.Provider value={feed}><Screens key={bot.status?.accounts?.active ?? "main"} {...bot} /></LiveContext.Provider>;
 }
 
 function Screens({ status: botStatus, error, busy, message, clearMessage, act }: ReturnType<typeof useBot>) {
