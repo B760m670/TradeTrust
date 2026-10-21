@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EditableSettings, Equity, Position, Settings, Status, Trade } from "./api";
 import { dateTime, pct, price, rMultiple, usd } from "./format";
+import { TickMarkType, type UTCTimestamp } from "lightweight-charts";
+import { crosshairTime, tickMark } from "./components/chartTime";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
   allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
+  addTrade, fillSeconds, MAX_SECONDS, type SecondBar,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -186,5 +189,50 @@ describe("portfolio", () => {
     expect(ch.usd).toBeCloseTo(100, 9);
     expect(ch.pct).toBeCloseTo(5, 9);
     expect(dayChange([a("USDT", 1000, true)], {})).toBeNull();
+  });
+});
+
+describe("second candles", () => {
+  const t = (sec: number, p: number, v = 1, ms = 0) => ({ t: sec * 1000 + ms, p, v });
+
+  it("builds OHLC and volume for each second from trades", () => {
+    const bars: SecondBar[] = [];
+    addTrade(bars, t(100, 10));
+    addTrade(bars, t(100, 12, 2, 300));
+    addTrade(bars, t(100, 9, 1, 900));
+    expect(bars).toEqual([{ time: 100, open: 10, high: 12, low: 9, close: 9, volume: 4 }]);
+  });
+
+  it("fills seconds without trades with flat candles and keeps late trades in their second", () => {
+    const bars: SecondBar[] = [];
+    addTrade(bars, t(100, 10));
+    addTrade(bars, t(103, 11));
+    expect(bars.map((b) => [b.time, b.open, b.close, b.volume])).toEqual(
+      [[100, 10, 10, 1], [101, 10, 10, 0], [102, 10, 10, 0], [103, 11, 11, 1]]);
+    const late = addTrade(bars, t(101, 9.5, 3));
+    expect(late).toEqual({ time: 101, open: 9.5, high: 9.5, low: 9.5, close: 9.5, volume: 3 });
+  });
+
+  it("lets time run on without trades", () => {
+    const bars: SecondBar[] = [];
+    expect(fillSeconds(bars, 50)).toEqual([]);
+    addTrade(bars, t(100, 10));
+    expect(fillSeconds(bars, 102).map((b) => b.time)).toEqual([101, 102]);
+    expect(fillSeconds(bars, 102)).toEqual([]);
+    fillSeconds(bars, 100 + MAX_SECONDS * 2);
+    expect(bars.length).toBe(MAX_SECONDS);
+    expect(bars[bars.length - 1].close).toBe(10);
+  });
+});
+
+describe("chart time", () => {
+  it("labels axes and crosshair in the phone's local time", () => {
+    const ts = Date.UTC(2026, 9, 21, 9, 48, 5) / 1000;
+    const d = new Date(ts * 1000);
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    expect(tickMark(ts as UTCTimestamp, TickMarkType.Time)).toBe(hm);
+    expect(tickMark(ts as UTCTimestamp, TickMarkType.TimeWithSeconds)).toBe(`${hm}:05`);
+    expect(crosshairTime(true, true)(ts as UTCTimestamp)).toMatch(new RegExp(`${hm}:05$`));
+    expect(crosshairTime(false)(ts as UTCTimestamp)).not.toMatch(/:/);
   });
 });

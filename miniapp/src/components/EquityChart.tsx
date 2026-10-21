@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { usd } from "../format";
 import { useTheme } from "../theme";
 import { useChartColors } from "./CandleChart";
+import { crosshairTime, tickMark } from "./chartTime";
 
 /** Капитал во времени: точка после каждой 4ч свечи, последняя — текущий капитал. */
 export function EquityChart({ points }: { points: [number, number][] }) {
@@ -21,8 +22,8 @@ export function EquityChart({ points }: { points: [number, number][] }) {
       },
       grid: { vertLines: { visible: false }, horzLines: { color: colors.grid } },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      localization: { locale: "ru-RU", priceFormatter: (p: number) => usd(p) },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: tickMark },
+      localization: { locale: "ru-RU", priceFormatter: (p: number) => usd(p), timeFormatter: crosshairTime(true) },
       handleScale: false,
       handleScroll: false,
     });

@@ -1,5 +1,5 @@
 // Логика отображения: состояние монеты, план входа, риск, статистика журнала. Без React — покрыто тестами.
-import type { EditableSettings, Equity, Position, Settings, Signal, Status, Trade } from "./api";
+import type { EditableSettings, Equity, MarketTrade, Position, Settings, Signal, Status, Trade } from "./api";
 
 export type ChipTone = "up" | "down" | "accent" | "amber" | "muted";
 export type CoinKind = "entry" | "held" | "filtered" | "up" | "down" | "none";
@@ -229,4 +229,59 @@ export function dayChange(assets: { coin: string; value: number | null; stable: 
     usd += a.value - a.value / (1 + ch / 100);
   }
   return known && total - usd > 0 ? { usd, pct: (usd / (total - usd)) * 100 } : null;
+}
+
+/** Свеча за одну секунду из сделок — как «1с» на биржах; секунда без сделок — ровная свеча без объёма. */
+export interface SecondBar {
+  time: number; // секунда, UTC
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export const MAX_SECONDS = 15 * 60; // сколько секундных свечей держать
+
+const flat = (time: number, price: number): SecondBar => ({ time, open: price, high: price, low: price, close: price, volume: 0 });
+
+function trim(bars: SecondBar[]): void {
+  if (bars.length > MAX_SECONDS) bars.splice(0, bars.length - MAX_SECONDS);
+}
+
+/** Добавляет сделку (время в мс) в секундные свечи; возвращает свечу, которую она изменила, или null. */
+export function addTrade(bars: SecondBar[], trade: MarketTrade): SecondBar | null {
+  const sec = Math.floor(trade.t / 1000);
+  const last = bars[bars.length - 1];
+  if (!Number.isFinite(trade.p) || trade.p <= 0) return null;
+  if (last && sec <= last.time) {
+    // сделка той же секунды или запоздавшая — в свою свечу
+    const bar = sec === last.time ? last : bars.find((b) => b.time === sec);
+    if (!bar) return null;
+    if (bar.volume === 0) bar.open = trade.p; // секунда была пустой — первая сделка открывает свечу
+    bar.high = Math.max(bar.volume === 0 ? trade.p : bar.high, trade.p);
+    bar.low = Math.min(bar.volume === 0 ? trade.p : bar.low, trade.p);
+    bar.close = trade.p;
+    bar.volume += trade.v;
+    return bar;
+  }
+  if (last && sec - last.time > MAX_SECONDS) bars.length = 0; // долгая пауза — начинаем заново
+  const prev = bars[bars.length - 1];
+  if (prev) for (let s = prev.time + 1; s < sec; s++) bars.push(flat(s, prev.close));
+  const bar = { time: sec, open: trade.p, high: trade.p, low: trade.p, close: trade.p, volume: trade.v };
+  bars.push(bar);
+  trim(bars);
+  return bar;
+}
+
+/** Время идёт и без сделок: дописывает ровные свечи до секунды upTo; возвращает новые свечи. */
+export function fillSeconds(bars: SecondBar[], upTo: number): SecondBar[] {
+  const last = bars[bars.length - 1];
+  if (!last || upTo <= last.time) return [];
+  const added: SecondBar[] = [];
+  for (let s = Math.max(last.time + 1, upTo - MAX_SECONDS + 1); s <= upTo; s++) added.push(flat(s, last.close));
+  if (added.length && added[0].time !== last.time + 1) bars.length = 0;
+  bars.push(...added);
+  trim(bars);
+  return added;
 }

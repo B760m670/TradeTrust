@@ -80,9 +80,12 @@ export class LiveFeed {
         return;
       }
       if (!msg.topic || !msg.data) return;
-      const data = (Array.isArray(msg.data) ? msg.data[msg.data.length - 1] : msg.data) as Record<string, unknown>;
-      this.last.set(msg.topic, data);
-      this.listeners.get(msg.topic)?.forEach((cb) => cb(data));
+      // сделки приходят пачкой — каждая важна; у цен и свечей последняя и есть актуальная
+      const items = (Array.isArray(msg.data) ? msg.data : [msg.data]) as Record<string, unknown>[];
+      if (!items.length) return;
+      this.last.set(msg.topic, items[items.length - 1]);
+      const set = this.listeners.get(msg.topic);
+      for (const data of items) set?.forEach((cb) => cb(data));
     };
     ws.onclose = () => {
       clearInterval(this.ping);

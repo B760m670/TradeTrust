@@ -125,6 +125,13 @@ class BybitClient:
         rows = self._request("GET", "/v5/market/tickers", {"category": "spot", "symbol": symbol})["list"]
         return float(rows[0]["lastPrice"])
 
+    def recent_trades(self, symbol: str, limit: int = 60) -> list[dict]:
+        """Последние сделки на рынке (спот отдаёт до 60): время в мс, цена, объём — по возрастанию времени."""
+        rows = self._request("GET", "/v5/market/recent-trade",
+                             {"category": "spot", "symbol": symbol, "limit": limit})["list"]
+        return sorted(({"t": int(r["time"]), "p": float(r["price"]), "v": float(r["size"])} for r in rows),
+                      key=lambda r: r["t"])
+
     def instrument(self, symbol: str) -> Instrument:
         rows = self._request("GET", "/v5/market/instruments-info", {"category": "spot", "symbol": symbol})["list"]
         if not rows:
@@ -189,6 +196,9 @@ class BybitExchange:
 
     def last_price(self, symbol: str) -> float:
         return self.c.last_price(symbol)
+
+    def recent_trades(self, symbol: str) -> list[dict]:
+        return self.c.recent_trades(symbol)
 
     def balance(self, coin: str) -> float:
         b = self.c.wallet([coin]).get(coin)

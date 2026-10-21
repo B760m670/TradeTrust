@@ -851,3 +851,34 @@ def test_running_bot_turns_on_btc_filter_once(tmp_path):
     rec.sent.clear()
     again = Bot(Config(**old), FakeExchange(), Store(db), rec)
     assert not again.cfg.btc_filter and not rec.sent
+
+
+# --- секундный график ----------------------------------------------------------
+
+def test_recent_trades_sorted_oldest_first():
+    rows = [{"time": "2000", "price": "10.5", "size": "0.2", "side": "Buy"},
+            {"time": "1000", "price": "10.4", "size": "1", "side": "Sell"}]
+    session = CaptureSession({"list": rows})
+    trades = BybitClient("mainnet", session=session).recent_trades("SOLUSDT")
+    assert "recent-trade?category=spot&symbol=SOLUSDT&limit=60" in session.calls[0][1]
+    assert trades == [{"t": 1000, "p": 10.4, "v": 1.0}, {"t": 2000, "p": 10.5, "v": 0.2}]
+
+
+def test_api_trades_and_fallback_without_history(make_bot):
+    bot, ex, _ = make_bot("confirm")
+    ex.set("SOL", cross_on_last_bar())
+    server = api.serve(bot, "secret-token", 0)
+    base = f"http://127.0.0.1:{server.server_address[1]}/api/trades"
+    auth = {"Authorization": "Bearer secret-token"}
+    try:
+        # у подделки биржи нет истории сделок — график просто начнётся с текущей секунды
+        data = json.loads(urllib.request.urlopen(urllib.request.Request(base + "?coin=SOL", headers=auth)).read())
+        assert data == {"coin": "SOL", "trades": []}
+        ex.recent_trades = lambda symbol: [{"t": 1, "p": 2.0, "v": 3.0}]
+        data = json.loads(urllib.request.urlopen(urllib.request.Request(base + "?coin=sol", headers=auth)).read())
+        assert data["trades"] == [{"t": 1, "p": 2.0, "v": 3.0}]
+        with pytest.raises(HTTPError) as e:
+            urllib.request.urlopen(urllib.request.Request(base + "?coin=NOPE", headers=auth))
+        assert e.value.code == 400
+    finally:
+        server.shutdown()
