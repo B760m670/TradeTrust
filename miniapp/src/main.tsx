@@ -14,6 +14,12 @@ try {
   // старый клиент Telegram
 }
 
+// В Telegram страница не должна масштабироваться жестами (в браузере это норма, в мини-приложении мешает).
+// Масштаб графиков работает: у них свои жесты (touch-action: none в styles.css).
+for (const type of ["gesturestart", "gesturechange"]) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

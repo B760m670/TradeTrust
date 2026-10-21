@@ -53,7 +53,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
 
   let body;
   if (ticks) {
-    body = <TickChart value={ticker?.price} levels={pos ? { stop: pos.stop, entry: pos.entry } : null} />;
+    body = <TickChart coin={coin} value={ticker?.price} levels={pos ? { stop: pos.stop, entry: pos.entry } : null} />;
   } else if (data && data.interval === tf) {
     body = <CandleChart data={data} live={live} />;
   } else if (error) {
@@ -78,7 +78,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
         {!ticks && <span><i style={{ background: colors.slow }} />EMA {set.ema_slow}</span>}
         {pos && !ticks && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп</span>}
         <span className="legend-tf">
-          {ticks ? "цена каждую секунду" : `свечи ${label}`}{tf !== BOT_TF && " · бот решает по 4ч"}
+          {ticks ? "по секундам, раньше — по минутам" : `свечи ${label}`}{tf !== BOT_TF && " · бот решает по 4ч"}
         </span>
       </div>
     </Card>

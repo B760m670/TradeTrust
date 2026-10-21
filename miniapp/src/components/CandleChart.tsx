@@ -12,7 +12,7 @@ import {
 import { useEffect, useRef } from "react";
 import type { ChartData } from "../api";
 import type { LiveCandle } from "../live";
-import { price } from "../format";
+import { chartPrice } from "../format";
 import { useTheme, type Theme } from "../theme";
 
 // те же цвета, что в styles.css (--up, --down, --accent, --faint) для каждой темы
@@ -63,7 +63,7 @@ export function CandleChart({ data, bars = VISIBLE_BARS, live }: { data: ChartDa
       },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      localization: { locale: "ru-RU", priceFormatter: (p: number) => price(p) },
+      localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p) },
       handleScale: { axisPressedMouseMove: { time: true, price: false } },
     });
 
