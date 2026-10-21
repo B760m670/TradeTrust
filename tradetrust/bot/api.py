@@ -32,7 +32,7 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None, telegram=None):
+                 users=None, telegram=None, seconds=None):
     web_dir = web_dir.resolve()
 
     def admin_data() -> dict:
@@ -154,6 +154,11 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     if interval not in CHART_INTERVALS:
                         return self._send(400, {"error": "unknown interval"})
                     return self._send(200, bot.chart(coin, interval))
+                if url.path == "/api/seconds":
+                    coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
+                    if coin not in bot.watched_coins():
+                        return self._send(400, {"error": "unknown coin"})
+                    return self._send(200, {"coin": coin, "bars": seconds.store.get(coin) if seconds else []})
                 if url.path == "/api/trades":
                     coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
                     if coin not in bot.watched_coins():
@@ -209,9 +214,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR, users=None, telegram=None) -> ThreadingHTTPServer:
+          web_dir: Path = WEB_DIR, users=None, telegram=None, seconds=None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram))
+                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram, seconds))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

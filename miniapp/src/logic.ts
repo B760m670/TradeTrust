@@ -274,6 +274,22 @@ export function addTrade(bars: SecondBar[], trade: MarketTrade): SecondBar | nul
   return bar;
 }
 
+/** История с сервера ([секунда, открытие, максимум, минимум, закрытие, объём], только секунды со сделками)
+ *  — в непрерывные секундные свечи: пропущенные секунды становятся ровными. */
+export function barsFromRows(rows: number[][]): SecondBar[] {
+  const bars: SecondBar[] = [];
+  for (const r of rows) {
+    if (r.length < 6 || !r.every(Number.isFinite)) continue;
+    const [time, open, high, low, close, volume] = r;
+    const prev = bars[bars.length - 1];
+    if (prev && time <= prev.time) continue;
+    if (prev) for (let s = Math.max(prev.time + 1, time - MAX_SECONDS); s < time; s++) bars.push(flat(s, prev.close));
+    bars.push({ time, open, high, low, close, volume });
+  }
+  trim(bars);
+  return bars;
+}
+
 /** Время идёт и без сделок: дописывает ровные свечи до секунды upTo; возвращает новые свечи. */
 export function fillSeconds(bars: SecondBar[], upTo: number): SecondBar[] {
   const last = bars[bars.length - 1];

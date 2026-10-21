@@ -6,19 +6,20 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { api, type MarketTrade } from "../api";
 import { chartPrice } from "../format";
 import { LiveContext } from "../live";
-import { addTrade, feedState, fillSeconds, type SecondBar } from "../logic";
+import { addTrade, barsFromRows, feedState, fillSeconds, type SecondBar } from "../logic";
 import { useTheme } from "../theme";
 import { ZoomControls, useChartColors } from "./CandleChart";
 import { crosshairTime, tickMark } from "./chartTime";
 
-const VISIBLE_SECONDS = 90;
+const BAR_SPACING = 8;       // ширина секунды на экране, px: ~45 секунд на телефоне
 const FLUSH_MS = 200;        // сделки идут десятками в секунду — на экран пачкой
-const SEED_WAIT_MS = 3000;   // сколько ждать историю сделок с сервера, прежде чем рисовать без неё
+const SEED_WAIT_MS = 4000;   // сколько ждать историю с сервера, прежде чем рисовать без неё
 
 const num = (v: unknown) => (typeof v === "string" || typeof v === "number" ? Number(v) : NaN);
 
 /** «1с» как на биржах: свеча за каждую секунду из потока сделок Bybit, внизу объём.
- *  Начало — последние сделки с сервера бота (у биржи нет истории по секундам), дальше — поток. */
+ *  История — последние 15 минут с сервера бота (он слушает сделки всё время: у Bybit нет свечей по секундам),
+ *  дальше — живой поток. Выход из «1с» и повторный вход ничего не сбрасывают: история снова берётся с сервера. */
 export function TickChart({ coin, levels }: { coin: string; levels: { stop: number; entry: number } | null }) {
   const feed = useContext(LiveContext);
   const box = useRef<HTMLDivElement>(null);
@@ -56,9 +57,11 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
     volume.current?.setData(bars.current.map(volBar));
     shown.current = bars.current[bars.current.length - 1]?.time ?? 0;
   };
+  // к последней секунде с обычным масштабом; дальше график сам сдвигается за новыми свечами
   const showRecent = () => {
-    const n = bars.current.length;
-    chartRef.current?.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - VISIBLE_SECONDS), to: n + 3 });
+    const ts = chartRef.current?.timeScale();
+    ts?.applyOptions({ barSpacing: BAR_SPACING });
+    ts?.scrollToRealTime();
   };
 
   useEffect(() => {
@@ -69,8 +72,8 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
         fontFamily: "'Manrope Variable', system-ui, sans-serif" },
       grid: { vertLines: { visible: false }, horzLines: { color: colors.grid } },
       rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.25 } },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 3,
-        tickMarkFormatter: tickMark },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: true, rightOffset: 4,
+        barSpacing: BAR_SPACING, shiftVisibleRangeOnNewBar: true, tickMarkFormatter: tickMark },
       crosshair: { vertLine: { color: colors.fast, labelBackgroundColor: colors.fast },
         horzLine: { color: colors.fast, labelBackgroundColor: colors.fast } },
       localization: { locale: "ru-RU", priceFormatter: (p: number) => chartPrice(p), timeFormatter: crosshairTime(true, true) },
@@ -120,17 +123,25 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
       if (bars.current.length && bars.current[0].time > shown.current) redraw();
       else draw(changed.concat(bars.current.filter((b) => b.time > shown.current)));
     };
-    const seed = (trades: MarketTrade[]) => {
+    const seed = (history: SecondBar[], trades: MarketTrade[] = []) => {
       if (!alive || seeded) return;
       seeded = true;
-      bars.current = [];
-      apply(trades);
+      bars.current = history;
       redraw();
+      apply(trades);
       apply(pending);
       pending = [];
       showRecent();
     };
-    api.trades(coin).then((d) => seed(d.trades), () => seed([]));
+    // история: секундные свечи с сервера; если их нет (сервер только запустился) — последние сделки
+    api.seconds(coin)
+      .then((d) => barsFromRows(d.bars))
+      .catch(() => [] as SecondBar[])
+      .then(async (history) => {
+        if (history.length) return seed(history);
+        const trades = await api.trades(coin).then((d) => d.trades, () => [] as MarketTrade[]);
+        seed([], trades);
+      });
     const wait = setTimeout(() => seed([]), SEED_WAIT_MS);
 
     const off = feed?.subscribe(`publicTrade.${coin}USDT`, (d) => {
@@ -148,9 +159,7 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
       if (!seeded || !pending.length) return;
       const batch = pending;
       pending = [];
-      const wasAtEnd = isAtEnd();
       apply(batch);
-      if (wasAtEnd) chartRef.current?.timeScale().scrollToRealTime();
     }, FLUSH_MS);
     // время идёт и без сделок: прошедшие секунды без сделок — ровные свечи
     const tick = setInterval(() => {
@@ -158,10 +167,8 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
       if (!seeded) return;
       const added = fillSeconds(bars.current, Math.floor((Date.now() + skew) / 1000) - 1);
       if (!added.length) return;
-      const wasAtEnd = isAtEnd();
       if (bars.current[0].time > shown.current) redraw();
       else draw(added);
-      if (wasAtEnd) chartRef.current?.timeScale().scrollToRealTime();
     }, 1000);
     return () => {
       alive = false;
@@ -172,18 +179,11 @@ export function TickChart({ coin, levels }: { coin: string; levels: { stop: numb
     };
   }, [coin, feed]);
 
-  // если пользователь отмотал график назад — не дёргаем его к последней секунде
-  const isAtEnd = () => {
-    const r = chartRef.current?.timeScale().getVisibleLogicalRange();
-    return !r || r.to >= bars.current.length - 2;
-  };
-
+  // масштаб — шириной секунды; правый край (последняя секунда) остаётся на месте
   const zoom = (factor: number) => {
     const ts = chartRef.current?.timeScale();
-    const r = ts?.getVisibleLogicalRange();
-    if (!ts || !r) return;
-    const width = Math.max(10, (r.to - r.from) * factor);
-    ts.setVisibleLogicalRange({ from: r.to - width, to: r.to });
+    if (!ts) return;
+    ts.applyOptions({ barSpacing: Math.min(40, Math.max(2, ts.options().barSpacing / factor)) });
   };
 
   return (

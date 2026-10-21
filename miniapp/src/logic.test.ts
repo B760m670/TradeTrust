@@ -6,7 +6,7 @@ import { crosshairTime, tickMark } from "./components/chartTime";
 import {
   changedSettings, coinState, emaGap, entryPlan, filterRows, journalStats, nextCandleClose, rangeMarks, signalRows,
   allocation, dayChange, localTime, maxDrawdown, stepValue, stopRisk, withLivePrices,
-  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar, ago, duration, filterUsers,
+  addTrade, feedState, fillSeconds, MAX_SECONDS, utcOffsetLabel, type SecondBar, ago, duration, filterUsers, barsFromRows,
 } from "./logic";
 
 const editable: EditableSettings = {
@@ -264,5 +264,14 @@ describe("admin helpers", () => {
     expect(filterUsers(rows, "@ANNA").map((r) => r.id)).toEqual(["7"]);
     expect(filterUsers(rows, "бор").map((r) => r.id)).toEqual(["8"]);
     expect(filterUsers(rows, "8").map((r) => r.id)).toEqual(["8"]);
+  });
+});
+
+describe("seconds history from the server", () => {
+  it("fills seconds without trades with flat candles", () => {
+    const bars = barsFromRows([[100, 10, 12, 9, 11, 2], [103, 11, 11, 10, 10, 1], [102, 1, 1, 1, 1, 1], [104, NaN, 1, 1, 1, 1]]);
+    expect(bars.map((b) => [b.time, b.open, b.close, b.volume])).toEqual(
+      [[100, 10, 11, 2], [101, 11, 11, 0], [102, 11, 11, 0], [103, 11, 10, 1]]);
+    expect(barsFromRows([])).toEqual([]);
   });
 });

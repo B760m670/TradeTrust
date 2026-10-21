@@ -202,6 +202,7 @@ type Message = { message: string };
 export const api = {
   status: () => request<Status>("/api/status"),
   portfolio: () => request<Portfolio>("/api/portfolio"),
+  seconds: (coin: string) => request<{ coin: string; bars: number[][] }>(`/api/seconds?coin=${encodeURIComponent(coin)}`),
   trades: (coin: string) => request<{ coin: string; trades: MarketTrade[] }>(`/api/trades?coin=${encodeURIComponent(coin)}`),
   chart: (coin: string, interval = "4h") =>
     request<ChartData>(`/api/candles?coin=${encodeURIComponent(coin)}&interval=${interval}`),

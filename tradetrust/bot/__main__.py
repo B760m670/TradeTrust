@@ -12,6 +12,8 @@ from .engine import Bot, next_bar_close
 from .paper import PaperExchange
 from .store import Store
 from .telegram import Telegram
+from ..research import COINS
+from .seconds import SecondsFeed
 from .users import CachedMarket, Users
 
 log = logging.getLogger("tradetrust.bot")
@@ -47,9 +49,12 @@ def build(cfg: Config) -> tuple[Bot, Users | None]:
         bot.report_extras.append(users.daily_line)
     if notifier:
         notifier.start(bot, users)
+    # секундные свечи для графика «1с»: сервер слушает сделки Bybit по всем монетам и помнит 15 минут
+    seconds = SecondsFeed(lambda: sorted(set(COINS) | set(bot.watched_coins())))
+    seconds.start()
     # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
     api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users,
-              telegram=notifier)
+              telegram=notifier, seconds=seconds)
     return bot, users
 
 
