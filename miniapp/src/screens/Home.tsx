@@ -4,7 +4,7 @@ import type { Tab } from "../App";
 import { AccountSegment } from "../components/Account";
 import { BotPowerButton, BotState, PauseButton, type Act } from "../components/BotControls";
 import { BotIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, WalletIcon } from "../components/icons";
-import { BigMoney, Card, CoinAvatar, Flash, LiveBadge, Skeleton } from "../components/ui";
+import { BigMoney, Card, CoinAvatar, Flash, LiveBadge, Logo, Skeleton } from "../components/ui";
 import { pct, price, tone, usd } from "../format";
 import { useTickers } from "../live";
 import { dayChange } from "../logic";
@@ -47,7 +47,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
   return (
     <div className="home">
       <header className="rail">
-        <span className="logo" aria-hidden="true">TT</span>
+        <Logo />
         <AccountSegment status={s} busy={busy} act={act} />
         <span className="grow" />
         <button className="sq-btn" aria-label="Настройки" onClick={onSettings}><GearIcon size={18} /></button>
