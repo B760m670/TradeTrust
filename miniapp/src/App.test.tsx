@@ -24,12 +24,16 @@ const P2P_AD = { id: "a1", nick: "seller1", price: 82.6, quantity: 500, min_amou
 const P2P_VIEW = {
   available: true, currencies: ["RUB", "USD"], currency: "RUB", error: "",
   account: { nickName: "owner", recentRate: 100, recentFinishCount: 4 },
-  market: { currency: "RUB", prefs: { amount: 10000, payments: ["75"], min_rate: 90, min_orders: 20, alert_pct: 0 },
-    updated_at: 1, bid: 81.9, ask: 82.6, maker_pct: 0.85, taker_pct: -0.85, fee_pct: 0, bids: [{ ...P2P_AD, id: "b1", price: 81.9 }],
+  market: { currency: "RUB", prefs: { amount: 10000, payments: ["75"], min_rate: 90, min_orders: 20, alert_pct: 0,
+    fee_buy_pct: 0.3, fee_sell_pct: 0, extra_pct: 0, limits: {}, month_cap: 3500000 },
+    updated_at: 1, bid: 81.9, ask: 82.6, gross_pct: 0.85, costs_pct: 0.3, ad_fee_pct: 0, maker_pct: 0.55, taker_pct: -0.85, bids: [{ ...P2P_AD, id: "b1", price: 81.9 }],
     asks: [P2P_AD], total: { bids: 4, asks: 4 }, payments: [{ id: "75", name: "Tinkoff", ads: 7, mine: true }, { id: "14", name: "способ #14", ads: 2, mine: false }] },
   pending: [{ id: "o1", side: "sell", status: 20, status_text: "оплачен — ждём, пока продавец отпустит монеты", price: 82.4,
     amount: 8240, qty: 100, currency: "RUB", token: "USDT", who: "Ivan", created: 1700000000000, seconds_left: 0 }],
   stats: {},
+  ledger: { currency: "RUB", turnover: 2900000, month_cap: 3500000, people_day: 3, people_month: 41, month: "10.2026",
+    warnings: [{ key: "cap:month", text: "Оборот за месяц 2 900 000 из 3 500 000 RUB (83%) — порог, который вы задали" }],
+    cards: [{ pay: "75", name: "Tinkoff", day_in: 12450, day_out: 8200, month_in: 1500000, month_out: 1400000, people: 30, limit: { day: 300000 } }] },
 };
 
 class FakeWebSocket {
@@ -107,6 +111,7 @@ beforeEach(() => {
         { exchange: "okex", name: "OKX", price: 99.9, spread_pct: 0.01, volume_usd: 9e7, stale: true, anomaly: false, thin: false, url: null, diff_pct: null }] }
       : url.startsWith("/api/p2p?") || url === "/api/p2p" ? P2P_VIEW
       : url === "/api/p2p/prefs" ? { message: "Сохранено", prefs: P2P_VIEW.market.prefs }
+      : url === "/api/p2p/journal" ? { message: "Журнал отправлен в Telegram: 41 ордеров" }
       : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
         time: [1000, 1900], open: [10, 11], high: [12, 12], low: [9, 10], close: [11, 11.5], volume: [5, 6], ema_fast: [], ema_slow: [], atr: [], position: null }
       : { message: "✅ Куплено" };
@@ -211,7 +216,10 @@ describe("mini app", () => {
       await renderApp();
       fireEvent.click(await screen.findByRole("button", { name: /P2P · USDT/ }));
       expect(await screen.findByText("Спред сейчас")).toBeTruthy();
-      expect(screen.getByText("+0,85%")).toBeTruthy();
+      expect(screen.getByText("+0,55%")).toBeTruthy(); // чистыми: 0,85% до расходов минус 0,3% комиссии мейкера
+      expect(screen.getByText(/Оборот за месяц 2 900 000 из 3 500 000/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Прислать журнал сделок в Telegram" }));
+      expect(await screen.findByText("Журнал отправлен в Telegram: 41 ордеров")).toBeTruthy();
       expect(screen.getByText(/проверьте поступление в банке/)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "способ #14" }));
       await waitFor(() => expect(calls.find((c) => c.url === "/api/p2p/prefs")?.body).toEqual({ currency: "RUB", payments: ["75", "14"] }));

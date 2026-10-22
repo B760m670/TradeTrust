@@ -1,5 +1,6 @@
 """P2P владельца: стакан и спред по вашим фильтрам, уведомления по ордерам, статистика — только чтение."""
 import json
+import time
 import urllib.request
 from urllib.error import HTTPError
 from urllib.parse import urlparse
@@ -34,7 +35,7 @@ class FakeP2P:
                        ad("b4", 81.5, "0")]
         self.sellers = [ad("s1", 83.1, "1"), ad("s2", 82.6, "1", hi=3000), ad("s3", 82.9, "1", online=False),
                         ad("s4", 83.4, "1")]
-        self.pending, self.history, self.calls = [], [], []
+        self.pending, self.history, self.calls, self.details = [], [], [], {}
 
     def request(self, method, url, data=None, headers=None, timeout=None):
         assert method == "POST" and headers["X-BAPI-API-KEY"] == "K"
@@ -49,6 +50,7 @@ class FakeP2P:
             "/v5/p2p/item/personal/list": lambda: {"items": [{"currencyId": "RUB", "feeRate": "0.1"}]},
             "/v5/p2p/order/pending/simplifyList": lambda: {"count": len(self.pending), "items": self.pending},
             "/v5/p2p/order/simplifyList": lambda: {"count": len(self.history), "items": self.history},
+            "/v5/p2p/order/info": lambda: self.details.get(body["orderId"], {}),
         }[path]()
         return FakeResponse({"ret_code": 0, "ret_msg": "SUCCESS", "result": result, "time_now": "1"})
 
@@ -75,8 +77,9 @@ def test_filters_and_spread_math():
     assert not fits(a, 6000, [], 90, 20)            # сумма больше лимита объявления
     assert not fits(a, 0, ["14"], 90, 20)           # нет вашего способа оплаты
     assert not fits(parse_ad(ad("y", 82, "1", rate=80)), 0, [], 90, 20)
-    s = spread(82.0, 83.0, fee_pct=0.1)
-    assert s["maker_pct"] == pytest.approx((83 / 82 - 1) * 100 - 0.2) and s["taker_pct"] < 0
+    s = spread(82.0, 83.0, fee_buy=0.3, fee_sell=0.0, extra=0.05)
+    assert s["gross_pct"] == pytest.approx((83 / 82 - 1) * 100) and s["costs_pct"] == pytest.approx(0.35)
+    assert s["maker_pct"] == pytest.approx(s["gross_pct"] - 0.35) and s["taker_pct"] < 0
 
 
 def test_market_uses_your_payments_and_filters(desk):
@@ -87,7 +90,8 @@ def test_market_uses_your_payments_and_filters(desk):
     # s2 — сумма больше лимита, s3 — не в сети
     assert m["prefs"]["payments"] == ["75"]
     assert [a["id"] for a in m["bids"]] == ["b1", "b4"] and [a["id"] for a in m["asks"]] == ["s1", "s4"]
-    assert m["bid"] == 81.9 and m["ask"] == 83.1 and m["fee_pct"] == pytest.approx(0.1)
+    assert m["bid"] == 81.9 and m["ask"] == 83.1 and m["ad_fee_pct"] == pytest.approx(0.1)
+    assert m["costs_pct"] == pytest.approx(0.3)  # по рублю по умолчанию — комиссия мейкера за объявление на покупку
     assert m["payments"][0] == {"id": "75", "name": "Tinkoff", "ads": 7, "mine": True}
     n = len(fake.calls)
     d.market("RUB")
@@ -102,7 +106,7 @@ def test_orders_notifications(desk, monkeypatch):
     fake.pending = [order("o1", 20), order("o2", 10, side=0, transferLastSeconds="200")]
     d.poll()
     assert "отметил оплату" in sent[0] and "Иван И." in sent[0] and "Бот монеты не отпускает" in sent[0]
-    assert sent[1].startswith("🆕 Новый ордер: вы покупаете 100.00 USDT") and "осталось 3 мин" in sent[2]
+    assert sent[1].startswith("🆕 Новый ордер: вы покупаете 100,00 USDT по 82,40 = 8 240 RUB") and "осталось 3 мин" in sent[2]
     d.poll()
     assert len(sent) == 3  # без изменений — тишина, напоминание об оплате — один раз
     fake.pending = [order("o2", 20, side=0)]
@@ -115,7 +119,7 @@ def test_spread_alert_threshold_and_cooldown(desk, monkeypatch):
     d, _, sent = desk
     d.set_prefs("RUB", {"alert_pct": 0.5})
     d.poll()
-    assert sent and sent[0].startswith("📊 Спред RUB: 0.65%")  # 82.6/81.9 − 1 − 2×0.1%
+    assert sent and sent[0].startswith("📊 Чистый спред RUB: 0,55%")  # 82.6/81.9 − 1 − 0.3% комиссии мейкера
     d._last_alert_check = 0
     d.poll()
     assert len(sent) == 1  # повторно — не раньше чем через 2 часа
@@ -163,3 +167,40 @@ def test_api_owner_only(make_bot, desk):
         assert e.value.code in (401, 403)
     finally:
         server.shutdown()
+
+
+def test_cards_ledger_limits_and_journal(desk):
+    d, fake, sent = desk
+    now_ms = int(time.time() * 1000)
+    fake.history = [  # три завершённых ордера за сегодня: две покупки USDT (вы платите) и продажа (вам платят)
+        order("h1", 50, side=0, amount=8200, price=82, createDate=str(now_ms - 3000), targetUserId="u1"),
+        order("h2", 50, side=0, amount=4150, price=83, createDate=str(now_ms - 2000), targetUserId="u2"),
+        order("h3", 50, side=1, amount=12450, price=83, createDate=str(now_ms - 1000), targetUserId="u3"),
+        order("h4", 40, side=1, amount=999, price=83, createDate=str(now_ms - 500)),  # отменён — не считается
+    ]
+    fake.details = {"h1": {"paymentType": 75}, "h2": {"confirmedPayTerm": {"paymentType": "582",
+                    "paymentConfigVo": {"paymentName": "Sberbank"}}}, "h3": {"paymentType": 75}}
+    d.set_prefs("RUB", {"limits": {"75": {"day": 25000}}, "month_cap": 20000})
+    led = d.ledger("RUB")
+    tinkoff = next(c for c in led["cards"] if c["pay"] == "75")
+    assert tinkoff["name"] == "Tinkoff" and tinkoff["day_out"] == 8200 and tinkoff["day_in"] == 12450 and tinkoff["people"] == 2
+    assert led["turnover"] == 8200 + 4150 + 12450 and led["people_month"] == 3
+    assert [w["key"] for w in led["warnings"]] == ["75:day", "cap:month"]  # 20 650 из 25 000 и 24 800 из 20 000
+    n = len(fake.calls)
+    d.ledger("RUB")
+    assert sum(1 for p, _ in fake.calls[n:] if p == "/v5/p2p/order/info") == 0  # детали ордеров — один раз
+    d._check_limits()
+    d._check_limits()
+    assert len(sent) == 2 and sent[0].startswith("🧾 Tinkoff: оборот за день 20 650 из 25 000 RUB")  # один раз за период
+    data, count = d.journal()
+    text = data.decode("utf-8-sig").splitlines()
+    assert count == 3 and text[0].startswith("Дата (МСК);Ордер;Сторона")
+    sale = text[-1].split(";")
+    # продано 150 USDT по 83: 100 по 82 + 50 по 83 → себестоимость 12 350, результат +100
+    assert sale[2] == "продажа" and sale[9] == "Tinkoff" and sale[10] == "12350" and sale[11] == "100"
+
+
+def test_fifo_marks_sales_without_purchases():
+    from tradetrust.bot.p2p import fifo_journal, order_view
+    rows = fifo_journal([order_view(order("s", 50, side=1, amount=8300, price=83))])
+    assert rows[0]["uncovered"] == pytest.approx(100) and rows[0]["result"] == 0

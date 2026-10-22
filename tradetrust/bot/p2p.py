@@ -8,10 +8,13 @@ API: https://bybit-exchange.github.io/docs/p2p/guide — доступен тол
 """
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import threading
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 
 from .bybit import BybitClient
 
@@ -29,7 +32,15 @@ CACHE_SECONDS = 20       # стакан не чаще раза в 20 секун�
 ALERT_EVERY = 300        # проверка спреда для уведомления — раз в 5 минут
 ALERT_COOLDOWN = 2 * 3600
 PAY_WARN_SECONDS = 300   # «осталось 5 минут оплатить»
-DEFAULT_PREFS = {"amount": 0.0, "payments": [], "min_rate": 90, "min_orders": 20, "alert_pct": 0.0}
+DEFAULT_PREFS = {"amount": 0.0, "payments": [], "min_rate": 90, "min_orders": 20, "alert_pct": 0.0,
+                 # расходы на круг, % от суммы: комиссия мейкера за объявление на покупку (у Bybit по RUB ~0,25–0,3%
+                 # с 19.01.2026 — сверьте в кабинете), за объявление на продажу, банк/сеть/прочее
+                 "fee_buy_pct": 0.0, "fee_sell_pct": 0.0, "extra_pct": 0.0,
+                 # лимиты по способам оплаты: id способа → {"day": сумма, "month": сумма}; общий месячный оборот
+                 "limits": {}, "month_cap": 0.0}
+RUB_DEFAULTS = {"fee_buy_pct": 0.3, "month_cap": 3_500_000.0}  # порог «систематичности» по 282-ФЗ — по пересказам СМИ
+MSK = timezone(timedelta(hours=3))
+WARN_AT = 0.8  # предупреждать при 80% лимита
 
 
 @dataclass
@@ -45,6 +56,11 @@ class Ad:
     rate: int           # процент выполнения за 30 дней
     online: bool
     tags: list[str]
+
+
+def n(x: float, digits: int = 2) -> str:
+    """Число по-русски: 12 360,50."""
+    return f"{x:,.{digits}f}".replace(",", " ").replace(".", ",")
 
 
 def _num(x, default=0.0) -> float:
@@ -71,15 +87,18 @@ def fits(ad: Ad, amount: float, payments: list[str], min_rate: int, min_orders: 
     return not payments or bool(set(payments) & set(ad.payments))
 
 
-def spread(bid: float | None, ask: float | None, fee_pct: float = 0.0) -> dict:
+def spread(bid: float | None, ask: float | None, fee_buy: float = 0.0, fee_sell: float = 0.0, extra: float = 0.0) -> dict:
     """bid — лучшая цена, по которой у вас купят USDT (объявления на покупку), ask — по которой вам продадут.
 
     maker — круг через свои объявления: покупаете по цене лучших покупателей, продаёте по цене лучших продавцов;
+    gross — до расходов, maker_pct — чистыми: минус комиссии мейкера за оба объявления и прочие расходы на круг;
     taker — сразу по чужим объявлениям: купить у продавца и продать покупателю (обычно в минусе)."""
+    costs = fee_buy + fee_sell + extra
     if not bid or not ask:
-        return {"bid": bid, "ask": ask, "maker_pct": None, "taker_pct": None, "fee_pct": fee_pct}
-    return {"bid": bid, "ask": ask, "fee_pct": fee_pct,
-            "maker_pct": (ask / bid - 1) * 100 - 2 * fee_pct, "taker_pct": (bid / ask - 1) * 100}
+        return {"bid": bid, "ask": ask, "gross_pct": None, "maker_pct": None, "taker_pct": None, "costs_pct": costs}
+    gross = (ask / bid - 1) * 100
+    return {"bid": bid, "ask": ask, "gross_pct": gross, "costs_pct": costs, "maker_pct": gross - costs,
+            "taker_pct": (bid / ask - 1) * 100}
 
 
 class P2PClient:
@@ -108,6 +127,9 @@ class P2PClient:
     def pending_orders(self) -> list[dict]:
         return (self._post("/v5/p2p/order/pending/simplifyList", {"page": 1, "size": 30}) or {}).get("items") or []
 
+    def order_detail(self, order_id: str) -> dict:
+        return self._post("/v5/p2p/order/info", {"orderId": order_id}) or {}
+
     def orders(self, since_ms: int, pages: int = 5) -> list[dict]:
         out = []
         for page in range(1, pages + 1):
@@ -130,7 +152,48 @@ def order_view(o: dict) -> dict:
         "token": o.get("tokenId", TOKEN), "who": o.get("targetNickName", ""),
         "buyer_name": o.get("buyerRealName", ""), "seller_name": o.get("sellerRealName", ""),
         "created": int(_num(o.get("createDate"))), "seconds_left": int(_num(o.get("transferLastSeconds"))),
+        "who_id": str(o.get("targetUserId", "")),
     }
+
+
+def fifo_journal(orders: list[dict]) -> list[dict]:
+    """Журнал завершённых ордеров по времени с результатом продаж по FIFO (себестоимость — цены ваших покупок).
+    Партии считаются отдельно по каждой валюте: рубли с долларами не смешиваются."""
+    lots: dict[str, list[list[float]]] = {}
+    out = []
+    for o in sorted(orders, key=lambda x: x["created"]):
+        row = {**o, "cost": None, "result": None, "uncovered": 0.0}
+        q = lots.setdefault(o["currency"], [])
+        if o["side"] == "buy":
+            q.append([o["qty"], o["price"]])
+        else:
+            need, cost = o["qty"], 0.0
+            while need > 1e-12 and q:
+                take = min(need, q[0][0])
+                cost += take * q[0][1]
+                q[0][0] -= take
+                need -= take
+                if q[0][0] <= 1e-12:
+                    q.pop(0)
+            row["uncovered"] = need  # продано больше, чем куплено за период: себестоимость части неизвестна
+            row["cost"] = cost
+            row["result"] = (o["qty"] - need) * o["price"] - cost
+        out.append(row)
+    return out
+
+
+def journal_csv(rows: list[dict]) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Дата (МСК)", "Ордер", "Сторона", "Монета", "Количество", "Цена", "Сумма", "Валюта", "Контрагент",
+                "Способ оплаты", "Себестоимость проданного (FIFO)", "Результат продажи (FIFO)", "Без себестоимости, шт."])
+    num = lambda x: "" if x is None else f"{x:.8f}".rstrip("0").rstrip(".").replace(".", ",")  # noqa: E731
+    for r in rows:
+        when = datetime.fromtimestamp(r["created"] / 1000, MSK).strftime("%d.%m.%Y %H:%M")
+        w.writerow([when, r["id"], "покупка" if r["side"] == "buy" else "продажа", r["token"], num(r["qty"]),
+                    num(r["price"]), num(r["amount"]), r["currency"], r["who"], r.get("pay_name", ""),
+                    num(r["cost"]), num(r["result"]), num(r["uncovered"]) if r["uncovered"] else ""])
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")  # BOM — чтобы Excel открыл кириллицу
 
 
 def stats(orders: list[dict]) -> dict:
@@ -166,7 +229,7 @@ class P2PDesk:
     # --- настройки экрана: сумма, способы оплаты, фильтры, порог уведомления ----------
     def prefs(self, currency: str) -> dict:
         saved = (self.store.get("p2p_prefs") or {}).get(currency) or {}
-        prefs = {**DEFAULT_PREFS, **saved}
+        prefs = {**DEFAULT_PREFS, **(RUB_DEFAULTS if currency == "RUB" else {}), **saved}
         if "payments" not in saved:  # по умолчанию — ваши собственные способы оплаты
             prefs["payments"] = [p for p in self.payment_names() if p not in ("377",)]
         return prefs
@@ -176,7 +239,8 @@ class P2PDesk:
             raise ValueError(f"валюта: {', '.join(self.currencies)}")
         prefs = self.prefs(currency)
         for key, kind, lo, hi in (("amount", float, 0, 1e9), ("min_rate", int, 0, 100), ("min_orders", int, 0, 100000),
-                                  ("alert_pct", float, 0, 50)):
+                                  ("alert_pct", float, 0, 50), ("fee_buy_pct", float, 0, 5), ("fee_sell_pct", float, 0, 5),
+                                  ("extra_pct", float, 0, 10), ("month_cap", float, 0, 1e12)):
             if key in changes:
                 value = changes[key]
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not lo <= value <= hi:
@@ -187,6 +251,15 @@ class P2PDesk:
             if not isinstance(pays, list) or not all(isinstance(p, str) for p in pays) or len(pays) > 20:
                 raise ValueError("payments: список id способов оплаты")
             prefs["payments"] = pays
+        if "limits" in changes:
+            limits = changes["limits"]
+            ok = isinstance(limits, dict) and len(limits) <= 20 and all(
+                isinstance(k, str) and isinstance(v, dict) and all(
+                    p in ("day", "month") and isinstance(x, (int, float)) and not isinstance(x, bool) and 0 <= x <= 1e12
+                    for p, x in v.items()) for k, v in limits.items())
+            if not ok:
+                raise ValueError("limits: {способ: {day: сумма, month: сумма}}")
+            prefs["limits"] = {k: {p: float(x) for p, x in v.items() if x} for k, v in limits.items()}
         all_prefs = self.store.get("p2p_prefs") or {}
         all_prefs[currency] = prefs
         self.store.set("p2p_prefs", all_prefs)
@@ -223,7 +296,9 @@ class P2PDesk:
         names = self.payment_names()
         result = {
             "currency": currency, "prefs": prefs, "updated_at": int(now),
-            **spread(bids[0].price if bids else None, asks[0].price if asks else None, self.fee_pct(currency)),
+            **spread(bids[0].price if bids else None, asks[0].price if asks else None,
+                     prefs["fee_buy_pct"], prefs["fee_sell_pct"], prefs["extra_pct"]),
+            "ad_fee_pct": self.fee_pct(currency),  # что Bybit пишет в ваших объявлениях — для сверки
             "bids": [asdict(a) for a in bids[:5]], "asks": [asdict(a) for a in asks[:5]],
             "total": {"bids": len(buyers), "asks": len(sellers)},
             "payments": sorted(({"id": p, "name": names.get(p, f"способ #{p}"), "ads": n, "mine": p in names}
@@ -275,16 +350,22 @@ class P2PDesk:
         gone = [oid for oid in seen if oid not in current]
         if gone and not first_run:
             recent = {o["id"]: o for o in map(order_view, self.p2p.orders(int((time.time() - 3 * 86400) * 1000), pages=1))}
+            finished = False
             for oid in gone:
                 o = recent.get(oid)
                 if o and o["status"] in (40, 50, 80):
                     self.notify(self._order_text(o, new=False))
+                    finished |= o["status"] == 50
+            if finished:
+                try:
+                    self._check_limits()
+                except Exception as exc:  # лимиты — подсказка, ордера важнее
+                    log.warning("p2p limits: %s", exc)
         self.store.set("p2p_seen", current)
 
     def _head(self, o: dict) -> str:
         what = "вы покупаете" if o["side"] == "buy" else "вы продаёте"
-        return (f"{what} {o['qty']:,.2f} {o['token']} по {o['price']:,.2f} = {o['amount']:,.0f} {o['currency']}"
-                .replace(",", " "))
+        return f"{what} {n(o['qty'])} {o['token']} по {n(o['price'])} = {n(o['amount'], 0)} {o['currency']}"
 
     def _order_text(self, o: dict, new: bool) -> str:
         head, who = self._head(o), o["who"] or "контрагент"
@@ -314,10 +395,95 @@ class P2PDesk:
                 continue
             if time.time() - sent.get(currency, 0) < ALERT_COOLDOWN:
                 continue
-            self.notify(f"📊 Спред {currency}: {m['maker_pct']:.2f}% (порог {prefs['alert_pct']:g}%). Покупают по "
-                        f"{m['bid']:,.2f}, продают по {m['ask']:,.2f} — ваши фильтры и способы оплаты.".replace(",", " "))
+            self.notify(f"📊 Чистый спред {currency}: {n(m['maker_pct'])}% (порог {n(prefs['alert_pct'])}%). Покупают по "
+                        f"{n(m['bid'])}, продают по {n(m['ask'])}; расходы на круг {n(m['costs_pct'])}% учтены.")
             sent[currency] = time.time()
         self.store.set("p2p_alerts", sent)
+
+    # --- карты, лимиты, журнал ------------------------------------------------------------
+    def completed(self, since_ms: int, pages: int = 5) -> list[dict]:
+        """Завершённые ордера с вашей стороны и способом оплаты (берём из деталей ордера, один раз на ордер)."""
+        rows = [o for o in map(order_view, self.p2p.orders(since_ms, pages)) if o["status"] == 50]
+        meta: dict = self.store.get("p2p_meta") or {}
+        names = self.payment_names()
+        for o in rows:
+            if o["id"] not in meta:
+                try:
+                    d = self.p2p.order_detail(o["id"])
+                except Exception as exc:
+                    log.warning("p2p order detail %s: %s", o["id"], exc)
+                    continue
+                term = d.get("confirmedPayTerm") or {}
+                ptype = str(term.get("paymentType") or d.get("paymentType") or "")
+                name = (term.get("paymentConfigVo") or {}).get("paymentName") or names.get(ptype) or (f"способ #{ptype}" if ptype else "")
+                meta[o["id"]] = {"pay": ptype, "pay_name": name}
+            o.update(meta.get(o["id"], {"pay": "", "pay_name": ""}))
+        if len(meta) > 2000:  # храним только недавние
+            meta = dict(list(meta.items())[-1500:])
+        self.store.set("p2p_meta", meta)
+        return rows
+
+    def ledger(self, currency: str, rows: list[dict] | None = None) -> dict:
+        """Обороты по каждому способу оплаты за сегодня и за месяц (МСК), число разных контрагентов, лимиты."""
+        now = datetime.now(MSK)
+        day0 = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        month0 = int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        if rows is None:
+            rows = self.completed(month0)
+        prefs = self.prefs(currency)
+        cards: dict[str, dict] = {}
+        people_day, people_month = set(), set()
+        turnover = 0.0
+        for o in rows:
+            if o["currency"] != currency or o["created"] < month0:
+                continue
+            c = cards.setdefault(o["pay"], {"pay": o["pay"], "name": o["pay_name"] or "без способа", "day_in": 0.0,
+                                            "day_out": 0.0, "month_in": 0.0, "month_out": 0.0, "people": set()})
+            way = "in" if o["side"] == "sell" else "out"  # продаёте USDT — деньги приходят на карту
+            c[f"month_{way}"] += o["amount"]
+            c["people"].add(o["who_id"] or o["who"])
+            people_month.add(o["who_id"] or o["who"])
+            if o["created"] >= day0:
+                c[f"day_{way}"] += o["amount"]
+                people_day.add(o["who_id"] or o["who"])
+            turnover += o["amount"]
+        warnings = []
+        for c in cards.values():
+            c["people"] = len(c["people"])
+            lim = prefs["limits"].get(c["pay"], {})
+            c["limit"] = lim
+            for period, label in (("day", "за день"), ("month", "за месяц")):
+                used = c[f"{period}_in"] + c[f"{period}_out"]
+                if lim.get(period) and used >= WARN_AT * lim[period]:
+                    warnings.append({"key": f"{c['pay']}:{period}", "text": f"{c['name']}: оборот {label} "
+                                     f"{n(used, 0)} из {n(lim[period], 0)} {currency} ({used / lim[period]:.0%})"})
+        cap = prefs["month_cap"]
+        if cap and turnover >= WARN_AT * cap:
+            warnings.append({"key": "cap:month", "text": f"Оборот за месяц {n(turnover, 0)} из {n(cap, 0)} {currency} "
+                             f"({turnover / cap:.0%}) — порог, который вы задали"})
+        return {"currency": currency, "cards": sorted(cards.values(), key=lambda c: -(c["month_in"] + c["month_out"])),
+                "turnover": turnover, "month_cap": cap, "people_day": len(people_day), "people_month": len(people_month),
+                "warnings": warnings, "month": now.strftime("%m.%Y")}
+
+    def _check_limits(self) -> None:
+        """После завершённого ордера: предупредить один раз за период, когда оборот подходит к лимиту."""
+        warned: dict = self.store.get("p2p_limit_warned") or {}
+        period = datetime.now(MSK)
+        for currency in self.currencies:
+            prefs = self.prefs(currency)
+            if not prefs["limits"] and not prefs["month_cap"]:
+                continue
+            for w in self.ledger(currency)["warnings"]:
+                stamp = period.strftime("%Y-%m-%d") if w["key"].endswith(":day") else period.strftime("%Y-%m")
+                if warned.get(f"{currency}:{w['key']}") != stamp:
+                    self.notify(f"🧾 {w['text']}")
+                    warned[f"{currency}:{w['key']}"] = stamp
+        self.store.set("p2p_limit_warned", warned)
+
+    def journal(self, days: int = 180) -> tuple[bytes, int]:
+        """CSV всех завершённых ордеров за полгода (столько хранит Bybit) с FIFO — для учёта и 3-НДФЛ."""
+        rows = fifo_journal(self.completed(int((time.time() - days * 86400) * 1000), pages=40))
+        return journal_csv(rows), len(rows)
 
     # --- экран P2P ---------------------------------------------------------------------
     def view(self, currency: str) -> dict:
@@ -330,6 +496,7 @@ class P2PDesk:
             out["market"] = self.market(currency)
             out["pending"] = [order_view(o) for o in self.p2p.pending_orders()]
             out["stats"] = stats(self.p2p.orders(int((time.time() - 30 * 86400) * 1000)))
+            out["ledger"] = self.ledger(currency)
         except Exception as exc:
             log.warning("p2p view: %s", exc)
             out["error"] = explain(exc)

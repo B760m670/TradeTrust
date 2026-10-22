@@ -61,6 +61,13 @@ class Telegram:
             params["reply_markup"] = {"inline_keyboard": [[self._button(t, d) for t, d in row] for row in buttons]}
         return self._call("sendMessage", **params)["message_id"]
 
+    def send_document(self, filename: str, data: bytes, caption: str = "", chat_id: str | None = None) -> None:
+        """Файл в чат (например, журнал P2P-сделок для учёта)."""
+        resp = self.http.post(f"{self.url}/sendDocument", data={"chat_id": chat_id or self.chat_id, "caption": caption},
+                              files={"document": (filename, data, "text/csv")}, timeout=60)
+        if not resp.json().get("ok"):
+            raise RuntimeError(f"Telegram sendDocument: {resp.json().get('description')}")
+
     @staticmethod
     def _button(text: str, data: str) -> dict:
         # "url:https://..." — кнопка, открывающая мини-приложение; иначе callback-кнопка
