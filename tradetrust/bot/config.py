@@ -32,6 +32,7 @@ class Config:
     p2p_api_key: str = ""              # отдельный ключ с правами P2P; иначе ключ реального счёта
     p2p_api_secret: str = ""
     p2p_currencies: list[str] = field(default_factory=lambda: ["RUB", "USD"])
+    coingecko_api_key: str = ""        # бесплатный demo-ключ CoinGecko — выше лимиты для «Цены на биржах»
     futures: bool = False              # раздел «Фьючерсы» на том же счёте Bybit: лонг 1x, для копитрейдинга
     market: str = "spot"               # рынок этого бота: spot или linear (у раздела фьючерсов), из .env не задаётся
     mode: str = "confirm"              # signals — только сигналы, confirm — сделка после подтверждения, auto — сам
@@ -84,6 +85,7 @@ class Config:
             real_api_secret=_env("BYBIT_REAL_API_SECRET"),
             real_base_url=_env("BYBIT_REAL_BASE_URL"),
             futures=_env("BYBIT_FUTURES", "0").lower() in ("1", "true", "yes", "да"),
+            coingecko_api_key=_env("COINGECKO_API_KEY"),
             p2p=_env("BYBIT_P2P", "0").lower() in ("1", "true", "yes", "да"),
             p2p_api_key=_env("BYBIT_P2P_API_KEY"),
             p2p_api_secret=_env("BYBIT_P2P_API_SECRET"),

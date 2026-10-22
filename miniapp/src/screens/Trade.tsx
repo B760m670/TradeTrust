@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
-import { api, type OpenOrder, type Status } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { api, type OpenOrder, type Status, type VenuePrices } from "../api";
 import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon } from "../components/icons";
 import { Sheet } from "../components/Sheet";
-import { AccountBadge, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Segmented, Tabs, Tile, Value } from "../components/ui";
+import { AccountBadge, Button, Card, Chip, CoinAvatar, Empty, Flash, LiveBadge, RangeBar, Segmented, Skeleton, Tabs, Tile, Value } from "../components/ui";
 import { chartPrice, compact, dateTime, pct, price, tone, usd } from "../format";
 import { useLiveTickers } from "../live";
 import { coinState, emaGap, entryPlan } from "../logic";
@@ -12,8 +12,8 @@ import { confirmAction, haptic } from "../telegram";
 import { usePortfolio } from "./Portfolio";
 
 type Side = "buy" | "sell";
-type Panel = "position" | "orders" | "bot";
-const PANELS: [Panel, string][] = [["position", "Позиция"], ["orders", "Мои сделки"], ["bot", "Индикаторы"]];
+type Panel = "position" | "orders" | "venues" | "bot";
+const PANELS: [Panel, string][] = [["position", "Позиция"], ["orders", "Мои сделки"], ["venues", "Биржи"], ["bot", "Индикаторы"]];
 const PARTS = [25, 50, 75, 100];
 
 interface Props {
@@ -86,6 +86,7 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           {panel === "position" && <BotPosition coin={coin} status={s} busy={busy} act={act} />}
           {panel === "orders" && openOrders.length > 0 && <OpenOrders orders={openOrders} price={now} />}
           {panel === "orders" && <MyTrades coin={coin} status={s} ownQty={ownQty} price={now} />}
+          {panel === "venues" && <VenuePanel coin={coin} />}
           {panel === "bot" && <Indicators coin={coin} status={s} />}
           {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} futures={futures} />}
         </div>
@@ -181,6 +182,51 @@ function BotPosition({ coin, status: s, busy, act }: { coin: string; status: Sta
         </dl>
       ) : (
         <Empty title={`Бот не держит ${coin}`}>Сейчас: {state.label.toLowerCase()}. Бот войдёт сам, когда появится сигнал.</Empty>
+      )}
+    </Card>
+  );
+}
+
+/** Цена монеты на ваших биржах — по данным CoinGecko, раз в 2 минуты. */
+function VenuePanel({ coin }: { coin: string }) {
+  const [data, setData] = useState<VenuePrices | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    const load = () => api.venues(coin).then((d) => alive && setData(d), (e: Error) => alive && setData({ coin, rows: [], error: e.message }));
+    void load();
+    const t = setInterval(() => document.visibilityState === "visible" && void load(), 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [coin]);
+  const aside = data?.range_pct != null
+    ? <span className="muted small num">разница {data.range_pct.toFixed(3).replace(".", ",")}%</span> : undefined;
+  return (
+    <Card title="Цена на биржах" aside={aside}>
+      {!data ? <Skeleton height={120} /> : data.rows.length === 0 ? <Empty title="Нет данных">{data.error ?? "Монета не торгуется к USDT на этих биржах."}</Empty> : (
+        <>
+          <div className="list">
+            {data.rows.map((r) => {
+              const flag = r.stale ? "данные устарели" : r.anomaly ? "аномальная цена" : r.thin ? "маленький оборот" : null;
+              return (
+                <div key={r.exchange} className="list-row venue-row">
+                  <div className="row-main">
+                    <strong>{r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.name}</a> : r.name}</strong>
+                    <span className="muted small">оборот {compact(r.volume_usd)} ${r.spread_pct != null ? ` · спред ${r.spread_pct.toFixed(2).replace(".", ",")}%` : ""}</span>
+                  </div>
+                  <div className="order-at">
+                    <strong className="num">{chartPrice(r.price)}</strong>
+                    {flag ? <span className="small tone-down">{flag}</span>
+                      : r.diff_pct != null && <span className={`small num tone-${tone(r.diff_pct)}`}>{r.diff_pct >= 0 ? "+" : "−"}{Math.abs(r.diff_pct).toFixed(3).replace(".", ",")}% к средней</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="muted small p2p-note">
+            Данные CoinGecko{data.missing?.length ? ` · нет пары на: ${data.missing.join(", ")}` : ""}. Разница меньше двух комиссий (~0,2%) —
+            заработать на ней нельзя.{data.error ? ` ${data.error}.` : ""}
+          </p>
+        </>
       )}
     </Card>
   );
