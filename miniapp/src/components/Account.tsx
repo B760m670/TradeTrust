@@ -56,20 +56,20 @@ export function AccountSegment({ status: s, busy, act }: { status: Status; busy:
 export function AccountSheet({ status: s, act, onClose }: { status: Status; act: Act; onClose: () => void }) {
   const acc = s.accounts!;
   const real = acc.list.find((a) => a.real);
-  const toMain = () => {
+  const toDemo = (id: AccountInfo["id"]) => {
     onClose();
-    if (acc.active !== "main") void act(() => api.switchAccount("main"));
+    if (acc.active !== id) void act(() => api.switchAccount(id));
   };
   return (
     <Sheet title="Счёт" onClose={onClose}>
       <div className="account-list">
         {acc.list.map((a) => (
           <button key={a.id} className={`acc-opt${a.real ? " real" : " demo"}${(real ? a.real : a.id === acc.active) ? " on" : ""}`}
-            onClick={() => (a.real ? undefined : toMain())}>
+            onClick={() => (a.real ? undefined : toDemo(a.id))}>
             <span className="account-dot" aria-hidden="true" />
             <span className="row-main">
               <strong>{a.label}</strong>
-              <span className="muted small">{a.real ? "настоящие деньги · ключ только спот" : "виртуальные деньги по настоящим ценам"}</span>
+              <span className="muted small">{describe(a, "ключ только спот")}</span>
             </span>
             {a.id === acc.active && <CheckIcon size={18} />}
           </button>
@@ -100,7 +100,7 @@ export function AccountList({ status: s, onPick }: { status: Status; onPick: (a:
           <span className={`account-dot${a.real ? " real" : ""}`} aria-hidden="true" />
           <span className="row-main">
             <strong>{a.label}</strong>
-            <span className="muted small">{a.real ? "настоящие деньги" : "виртуальные деньги по настоящим ценам"}</span>
+            <span className="muted small">{describe(a)}</span>
           </span>
           {a.id === acc.active && <CheckIcon size={18} />}
         </button>
@@ -108,6 +108,11 @@ export function AccountList({ status: s, onPick }: { status: Status; onPick: (a:
       {!acc.list.some((a) => a.real) && <RealHint error={acc.real_error} />}
     </div>
   );
+}
+
+function describe(a: AccountInfo, realNote = ""): string {
+  if (a.market === "linear") return "фьючерсы, лонг 1x · тот же кошелёк, свой бот и капитал";
+  return a.real ? `настоящие деньги${realNote ? ` · ${realNote}` : ""}` : "виртуальные деньги по настоящим ценам";
 }
 
 function RealHint({ error }: { error: string }) {

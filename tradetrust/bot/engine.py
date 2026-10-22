@@ -201,8 +201,8 @@ class Bot:
         with self.lock:
             before = self.settings()
             values = check_settings(changes, before, self.defaults["coins"])
-            if self.cfg.account == "real" and self.enabled and values.get("capital_usdt", 1) <= 0:
-                raise ValueError("на реальном счёте у включённого бота должен быть задан капитал — "
+            if self.needs_capital and self.enabled and values.get("capital_usdt", 1) <= 0:
+                raise ValueError("у включённого бота здесь должен быть задан капитал — "
                                  "иначе он будет торговать всем балансом")
             self._apply(values)
             after = self.settings()
@@ -243,6 +243,11 @@ class Bot:
         self.store.log("пауза снята")
 
     @property
+    def needs_capital(self) -> bool:
+        """Реальный счёт и раздел фьючерсов (кошелёк общий со спотом): включённый бот — только со своим капиталом."""
+        return self.cfg.account in ("real", "futures")
+
+    @property
     def enabled(self) -> bool:
         """Бот торгует на этом счёте. Выключенный не открывает сделок и не шлёт сигналов,
         но уже открытые позиции ведёт до конца: стоп и выход по тренду."""
@@ -251,8 +256,9 @@ class Bot:
     def set_enabled(self, on: bool) -> str:
         if on == self.enabled:
             return "Бот уже включён" if on else "Бот уже выключен"
-        if on and self.cfg.account == "real" and self.cfg.capital_usdt <= 0:
-            raise ValueError("сначала задайте капитал бота — сколько USDT он может использовать на реальном счёте")
+        if on and self.needs_capital and self.cfg.capital_usdt <= 0:
+            where = "на реальном счёте" if self.cfg.account == "real" else "на фьючерсах (деньги общие со спотом)"
+            raise ValueError(f"сначала задайте капитал бота — сколько USDT он может использовать {where}")
         self.store.set("enabled", on)
         if not on:
             for p in self.store.pending_proposals():
@@ -309,7 +315,10 @@ class Bot:
         qty = min(risk / dist,
                   eq["total"] * self.cfg.max_position_pct / 100 / price,
                   eq["free"] * 0.995 / price)  # запас на комиссию и движение цены
-        inst = self.ex.instrument(self.symbol(coin))
+        try:
+            inst = self.ex.instrument(self.symbol(coin))
+        except Exception as exc:  # пары нет на бирже или в копитрейдинге — пропускаем монету, не всю проверку
+            return None, f"пара недоступна: {exc}"
         q = inst.floor_qty(qty)
         if q <= 0 or q * Decimal(str(price)) < inst.min_amount:
             return None, f"сумма меньше минимальной ({inst.min_amount} USDT), свободно {eq['free']:.2f} USDT"
@@ -700,6 +709,10 @@ class Bot:
         """Рыночная покупка или продажа на споте по сумме в USDT или количеству монеты.
         Продать можно только своё — то, что держит бот, он продаёт сам (или «Закрыть позицию»)."""
         coin = coin.upper()
+        if self.cfg.market == "linear":
+            # на фьючерсах позиция по паре одна на счёт: ручная сделка смешалась бы с позицией бота
+            # и повторилась бы у подписчиков копитрейдинга
+            raise ValueError("на счёте копитрейдинга ручные сделки отключены — торгует только бот")
         if coin not in self.tradable_coins():
             raise ValueError(f"монета {coin} не поддерживается")
         if side not in ("buy", "sell"):
@@ -801,7 +814,8 @@ class Bot:
             positions.append({"coin": p.coin, "qty": p.qty, "entry": p.entry, "stop": p.stop, "price": price,
                               "pnl_usdt": (price - p.entry) * p.qty, "opened_at": p.opened_at})
         return {
-            "env": self.cfg.env, "mode": self.mode, "paused": self.paused, "account": self.cfg.account,
+            "env": self.cfg.env, "market": self.cfg.market, "mode": self.mode, "paused": self.paused,
+            "account": self.cfg.account,
             "enabled": self.enabled,
             "equity": {k: v for k, v in eq.items() if k != "prices"},
             "positions": positions,

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from ..research import COINS
 
 ENVS = ("paper", "demo", "testnet", "mainnet")
+MARKETS = ("spot", "linear")  # спот или бессрочные фьючерсы USDT (раздел для копитрейдинга Bybit)
 MODES = ("signals", "confirm", "auto")
 
 
@@ -27,6 +28,8 @@ class Config:
     real_api_key: str = ""             # второй счёт владельца — реальный Bybit (mainnet), переключается в приложении
     real_api_secret: str = ""
     real_base_url: str = ""
+    futures: bool = False              # раздел «Фьючерсы» на том же счёте Bybit: лонг 1x, для копитрейдинга
+    market: str = "spot"               # рынок этого бота: spot или linear (у раздела фьючерсов), из .env не задаётся
     mode: str = "confirm"              # signals — только сигналы, confirm — сделка после подтверждения, auto — сам
     coins: list[str] = field(default_factory=lambda: list(COINS))
     risk_pct: float = 0.3              # маленький риск на все монеты — см. scripts/portfolio_study.py
@@ -76,6 +79,7 @@ class Config:
             real_api_key=_env("BYBIT_REAL_API_KEY"),
             real_api_secret=_env("BYBIT_REAL_API_SECRET"),
             real_base_url=_env("BYBIT_REAL_BASE_URL"),
+            futures=_env("BYBIT_FUTURES", "0").lower() in ("1", "true", "yes", "да"),
             mode=_env("MODE", "confirm").lower(),
             coins=[c.strip().upper() for c in _env("COINS", ",".join(COINS)).split(",") if c.strip()],
             risk_pct=_float("RISK_PCT", 0.3),
@@ -110,6 +114,10 @@ class Config:
     def validate(self) -> None:
         if self.env not in ENVS:
             raise ValueError(f"BYBIT_ENV должен быть одним из {ENVS}")
+        if self.market not in MARKETS:
+            raise ValueError(f"рынок: {' или '.join(MARKETS)}")
+        if self.env == "paper" and (self.futures or self.market != "spot"):
+            raise ValueError("Бумажный счёт торгует только спот — для фьючерсов нужен счёт Bybit (BYBIT_ENV=demo)")
         if self.mode not in MODES:
             raise ValueError(f"MODE должен быть одним из {MODES}")
         if self.env != "paper" and not (self.api_key and self.api_secret):

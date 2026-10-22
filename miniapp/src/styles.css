@@ -846,3 +846,9 @@ h3.section-title { margin: 22px 0 10px; }
   font-size: 10px; line-height: 14px; pointer-events: none; }
 .ind-legend .ind-title { color: var(--muted); }
 .chart-wrap .zoom { top: auto; bottom: 34px; }
+.order-note { margin: 0; padding: 10px 4px; text-align: center; }
+/* «Спот | Фьючерсы» в шапке пары — разделы одного счёта, как у Bybit */
+.market-seg { display: inline-flex; flex-shrink: 0; padding: 2px; border-radius: 8px; background: var(--surface-2); }
+.market-seg button { height: 26px; padding: 0 8px; white-space: nowrap; border: 0; border-radius: 6px; background: transparent; color: var(--muted);
+  font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.market-seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }

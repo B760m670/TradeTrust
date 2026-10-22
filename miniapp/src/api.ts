@@ -96,6 +96,8 @@ export interface Settings extends EditableSettings {
 
 export interface Status {
   env: Env;
+  /** spot — спот; linear — фьючерсы USDT, только лонг 1x: счёт мастер-трейдера копитрейдинга Bybit */
+  market?: "spot" | "linear";
   /** owner — основной счёт владельца; real — его реальный счёт; demo — виртуальный демо-счёт пользователя */
   account?: "owner" | "real" | "demo";
   /** бот торгует на этом счёте; выключенный только доводит открытые позиции */
@@ -124,10 +126,12 @@ export interface Status {
 }
 
 export interface AccountInfo {
-  id: "main" | "real";
+  id: "main" | "futures" | "real";
   label: string;
   env: Env;
   real: boolean;
+  /** раздел фьючерсов — тот же счёт Bybit, свой бот: лонг 1x для копитрейдинга */
+  market?: "spot" | "linear";
 }
 
 export interface Accounts {
