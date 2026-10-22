@@ -32,8 +32,9 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None, telegram=None, accounts=None):
-    """accounts — счета владельца (основной и реальный): владельцу отвечает тот, что сейчас выбран."""
+                 users=None, telegram=None, accounts=None, p2p=None):
+    """accounts — счета владельца (основной и реальный): владельцу отвечает тот, что сейчас выбран;
+    p2p — P2P владельца (только чтение), если включён."""
     web_dir = web_dir.resolve()
 
     def owner_now() -> Bot:
@@ -146,6 +147,7 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 if url.path == "/api/status":
                     status = bot.status()
                     status["admin"] = self.owner  # админка — только владельцу
+                    status["p2p"] = self.owner and p2p is not None
                     if self.owner and accounts is not None:
                         status["accounts"] = accounts.info()
                     return self._send(200, status)
@@ -153,6 +155,15 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._send(200, admin_data())
+                if url.path == "/api/p2p":
+                    if not self.owner:
+                        return self._send(403, {"error": "P2P — только для владельца"})
+                    if p2p is None:
+                        return self._send(200, {"available": False})
+                    currency = (parse_qs(url.query).get("currency") or [p2p.currencies[0]])[0].upper()
+                    if currency not in p2p.currencies:
+                        return self._send(400, {"error": f"валюта: {', '.join(p2p.currencies)}"})
+                    return self._send(200, p2p.view(currency))
                 if url.path == "/api/portfolio":
                     return self._send(200, bot.portfolio())
                 if url.path == "/api/candles":
@@ -182,7 +193,7 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
             if bot is None:
                 return
             parts = urlparse(self.path).path.strip("/").split("/")  # api/<...>
-            if self.owner and accounts is not None and parts[:2] not in (["api", "account"], ["api", "admin"]):
+            if self.owner and accounts is not None and parts[:2] not in (["api", "account"], ["api", "admin"], ["api", "p2p"]):
                 # приложение говорит, на каком счёте нажата кнопка: если счёт успели переключить
                 # (например, из Telegram), действие не выполняется — на реальном счёте только так
                 seen = self.headers.get("X-Account", "")
@@ -194,6 +205,15 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._admin_post(parts[2:])
+                if parts == ["api", "p2p", "prefs"]:
+                    if not self.owner or p2p is None:
+                        return self._send(403, {"error": "P2P — только для владельца"})
+                    body = self._body()
+                    try:
+                        prefs = p2p.set_prefs(str(body.get("currency", "")), body)
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
+                    return self._send(200, {"message": "Сохранено", "prefs": prefs})
                 if parts == ["api", "account"]:
                     if not self.owner or accounts is None:
                         return self._send(403, {"error": "только для владельца"})
@@ -252,9 +272,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None) -> ThreadingHTTPServer:
+          web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None, p2p=None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram, accounts))
+                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram, accounts, p2p))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

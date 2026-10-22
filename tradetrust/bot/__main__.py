@@ -12,6 +12,7 @@ from .accounts import FUTURES_TAG, REAL_TAG, Accounts, TaggedNotifier, check_key
 from .bybit import BybitClient, BybitExchange, LinearExchange
 from .config import Config
 from .engine import Bot, next_bar_close
+from .p2p import P2PClient, P2PDesk
 from .paper import PaperExchange
 from .store import Store
 from .telegram import Telegram
@@ -19,6 +20,29 @@ from .users import CachedMarket, Users
 
 log = logging.getLogger("tradetrust.bot")
 RECONCILE_SECONDS = 60
+
+
+P2P_TAG = "🤝 P2P\n"
+
+
+def connect_p2p(cfg: Config, notifier, store: Store) -> P2PDesk | None:
+    """P2P владельца (BYBIT_P2P=1): отдельный ключ с правами P2P или ключ реального счёта. Только чтение."""
+    if not cfg.p2p:
+        return None
+    if cfg.p2p_api_key:
+        key, secret, base = cfg.p2p_api_key, cfg.p2p_api_secret, cfg.real_base_url or None
+    elif cfg.real_api_key:
+        key, secret, base = cfg.real_api_key, cfg.real_api_secret, cfg.real_base_url or None
+    else:
+        key, secret, base = cfg.api_key, cfg.api_secret, cfg.base_url or None
+    client = BybitClient("mainnet", key, secret, base_url=base)
+    try:
+        client.sync_time()
+    except Exception:
+        log.exception("P2P")
+    tagged = TaggedNotifier(notifier, P2P_TAG) if notifier else None
+    return P2PDesk(P2PClient(client), store, (lambda text: tagged.send(text)) if tagged else (lambda text: None),
+                   cfg.p2p_currencies)
 
 
 def connect_futures(cfg: Config, notifier) -> Bot | None:
@@ -81,6 +105,7 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     if futures is not None and cfg.env != "mainnet":
         futures.market = market
     accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures)
+    accounts.p2p = connect_p2p(cfg, notifier, store)
     users = None
     if notifier:
         # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых
@@ -99,7 +124,7 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
         notifier.start(bot, users, accounts)
     # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
     api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users,
-              telegram=notifier, accounts=accounts)
+              telegram=notifier, accounts=accounts, p2p=accounts.p2p)
     return accounts, users
 
 
@@ -153,6 +178,22 @@ def main() -> None:
                "\n/help — команды")
 
     errors = OwnerErrors()
+    p2p_error = ""
+
+    def poll_p2p() -> None:
+        """Ошибку P2P (например, нет доступа к API) — в Telegram один раз, а не каждую минуту."""
+        nonlocal p2p_error
+        if accounts.p2p is None:
+            return
+        try:
+            accounts.p2p.poll()
+            p2p_error = ""
+        except Exception as exc:
+            log.warning("P2P: %s", exc)
+            if str(exc) != p2p_error:
+                p2p_error = str(exc)
+                bot.notify(f"{P2P_TAG}⚠️ {accounts.p2p.error or exc}")
+
     for b in accounts.all():
         errors.run(b, b.reconcile)
         errors.run(b, b.on_candle_close)  # если сервер перезапускался — обработать последнюю закрытую свечу
@@ -168,6 +209,7 @@ def main() -> None:
             if closed:
                 done = errors.run(b, b.on_candle_close) and done
             errors.run(b, b.maybe_daily_report)
+        poll_p2p()
         if users is not None:
             blocked = users.blocked()
             tick([b for b in users.all() if b.cfg.telegram_chat_id not in blocked], closed)
