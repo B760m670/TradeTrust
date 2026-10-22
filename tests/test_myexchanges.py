@@ -133,3 +133,22 @@ def test_config_needs_all_parts_of_a_key():
     ok = Config(kucoin_api_key="k", kucoin_api_secret="s", kucoin_passphrase="p")
     ok.validate()
     assert ok.problems == [] and ok.kucoin_api_key == "k"
+
+
+def test_bybit_without_transfer_permission_shows_unified_wallet():
+    class Client:
+        def wallet(self):
+            return {"USDT": {"wallet": 120.0}, "ETH": {"wallet": 1.0}}
+
+        def _request(self, method, path, params, auth=False):
+            if path == "/v5/market/tickers":
+                return {"list": [{"symbol": "ETHUSDT", "lastPrice": "2500"}]}
+            raise RuntimeError("Bybit " + path + ": 10005 Permission denied")
+
+    from tradetrust.bot.myexchanges import Bybit
+    hub = MyExchanges([Bybit(Client())])
+    hub.connect()
+    hub.refresh(force=True)
+    s = hub.view()["exchanges"][0]
+    assert s["error"] == "" and s["total"] == pytest.approx(2620)
+    assert any("Переводы" in w for w in s["warnings"])

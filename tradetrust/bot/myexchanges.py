@@ -42,6 +42,7 @@ class Exchange:
 
     def __init__(self, session: requests.Session | None = None):
         self.http = session or requests.Session()
+        self.notes: list[str] = []  # что не удалось показать при последнем обновлении (не мешает остальному)
 
     def check(self) -> list[str]:  # → предупреждения; KeyRejected — ключ не принят
         raise NotImplementedError
@@ -246,9 +247,16 @@ class Bybit(Exchange):
         out: dict[str, float] = {}
         for coin, b in self.c.wallet().items():
             _add(out, coin, b["wallet"])
-        fund = self.c._request("GET", "/v5/asset/transfer/query-account-coins-balance", {"accountType": "FUND"}, auth=True)
-        for b in fund.get("balance") or []:
-            _add(out, b["coin"], _f(b.get("walletBalance")))
+        self.notes = []
+        try:  # кошелёк Funding Bybit отдаёт только ключу с правом «Переводы»; без него — только Единый торговый
+            fund = self.c._request("GET", "/v5/asset/transfer/query-account-coins-balance", {"accountType": "FUND"},
+                                   auth=True)
+            for b in fund.get("balance") or []:
+                _add(out, b["coin"], _f(b.get("walletBalance")))
+        except Exception as exc:
+            log.info("bybit funding: %s", exc)
+            self.notes.append("показан только Единый торговый счёт: Funding-кошелёк Bybit отдаёт ключу с правом "
+                              "«Переводы»")
         return out
 
     def prices(self) -> dict[str, float]:
@@ -283,7 +291,7 @@ class MyExchanges:
         for e in self.exchanges:
             s = self.state[e.name]
             try:
-                s["warnings"] = e.check()
+                s["key_warnings"] = s["warnings"] = e.check()
                 s["connected"], s["error"] = True, ""
                 self._checked.add(e.name)
                 lines.append(f"✅ {e.name}" + (f" ({'; '.join(s['warnings'])})" if s["warnings"] else ""))
@@ -324,7 +332,8 @@ class MyExchanges:
                     continue
                 assets.append({"coin": coin, "qty": q, "price": price, "value": value})
             assets.sort(key=lambda a: -(a["value"] or 0))
-            s.update(assets=assets, total=sum(a["value"] or 0 for a in assets), updated_at=int(time.time()), error="")
+            s.update(assets=assets, total=sum(a["value"] or 0 for a in assets), updated_at=int(time.time()), error="",
+                     warnings=s.get("key_warnings", []) + e.notes)
         except Exception as exc:
             log.warning("balances %s: %s", e.name, exc)
             s["error"] = f"не удалось обновить: {str(exc)[:200]}"

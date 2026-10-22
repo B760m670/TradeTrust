@@ -38,6 +38,7 @@ export function P2P() {
   if (!data.available) {
     return (
       <Empty title="P2P не подключён">
+        {data.problems?.map((p) => <p key={p} className="tone-amber">⚠️ {p}</p>)}
         Добавьте в <code>/opt/tradetrust/.env</code> строку <code>BYBIT_P2P=1</code> и перезапустите бота. Нужен ключ
         реального счёта с правами P2P «только просмотр» и статус рекламодателя на Bybit.
       </Empty>
