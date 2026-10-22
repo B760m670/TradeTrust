@@ -254,6 +254,7 @@ export interface P2PStats {
 }
 export interface P2PView {
   available: boolean;
+  problems?: string[];
   currencies?: string[];
   currency?: string;
   error?: string;

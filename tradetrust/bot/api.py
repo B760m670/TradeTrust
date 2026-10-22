@@ -177,8 +177,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 if url.path == "/api/p2p":
                     if not self.owner:
                         return self._send(403, {"error": "P2P — только для владельца"})
-                    if p2p is None:
-                        return self._send(200, {"available": False})
+                    if p2p is None:  # почему не подключён — чтобы не гадать по .env
+                        return self._send(200, {"available": False, "problems": [
+                            p for p in bot.cfg.problems if "P2P" in p]})
                     currency = (parse_qs(url.query).get("currency") or [p2p.currencies[0]])[0].upper()
                     if currency not in p2p.currencies:
                         return self._send(400, {"error": f"валюта: {', '.join(p2p.currencies)}"})
