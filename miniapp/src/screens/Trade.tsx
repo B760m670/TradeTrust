@@ -37,6 +37,8 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
   const holding = portfolio?.assets.find((a) => a.coin === coin);
   const ownQty = Math.max(0, (holding?.qty ?? 0) - (holding?.bot_qty ?? 0));
   const futures = s.market === "linear";
+  // «Спот | Фьючерсы» — только на демо-счёте с разделом фьючерсов; на реальном метка счёта всегда видна
+  const sections = !!s.accounts?.list.some((a) => a.id === "futures") && s.accounts.active !== "real";
   const usdtFree = portfolio?.assets.find((a) => a.coin === "USDT")?.qty ?? s.equity.free;
   const [picker, setPicker] = useState(false);
   const [side, setSide] = useState<Side | null>(null);
@@ -50,9 +52,9 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           <span className="pair-name"><strong>{coin}</strong><span className="muted">/USDT</span></span>
           <ChevronIcon size={18} />
         </button>
-        <span className="spot-tag">{futures ? "ФЬЮЧЕРСЫ 1x" : "СПОТ"}</span>
+        {sections ? <MarketSwitch status={s} busy={busy} act={act} /> : <span className="spot-tag">{futures ? "ФЬЮЧЕРСЫ 1x" : "СПОТ"}</span>}
         <span className="grow" />
-        <AccountBadge real={s.env === "mainnet"} />
+        {!sections && <AccountBadge real={s.env === "mainnet"} />}
       </header>
 
       <section className="price-block">
@@ -101,6 +103,23 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
 
       {picker && <PairPicker coins={s.all_coins} current={coin} status={s} onPick={(c) => { setPicker(false); onCoin(c); }}
         onClose={() => setPicker(false)} />}
+    </div>
+  );
+}
+
+/** «Спот | Фьючерсы», как разделы у Bybit: один счёт, у фьючерсов свой бот. */
+function MarketSwitch({ status: s, busy, act }: { status: Status; busy: boolean; act: Act }) {
+  const acc = s.accounts!;
+  const futures = s.market === "linear";
+  const go = (id: "main" | "futures") => {
+    if (acc.active === id) return;
+    haptic();
+    void act(() => api.switchAccount(id));
+  };
+  return (
+    <div className="market-seg" role="radiogroup" aria-label="Рынок">
+      <button role="radio" aria-checked={!futures} className={futures ? undefined : "on"} disabled={busy} onClick={() => go("main")}>Спот</button>
+      <button role="radio" aria-checked={futures} className={futures ? "on" : undefined} disabled={busy} onClick={() => go("futures")}>Фьючерсы</button>
     </div>
   );
 }

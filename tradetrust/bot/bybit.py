@@ -171,8 +171,10 @@ class BybitClient:
         out = {}
         for acct in result.get("list", []):
             for c in acct.get("coin", []):
+                # im — деньги под фьючерсными позициями и ордерами: споту их тратить нельзя
+                im = float(c.get("totalPositionIM") or 0) + float(c.get("totalOrderIM") or 0)
                 out[c["coin"]] = {"wallet": float(c.get("walletBalance") or 0), "locked": float(c.get("locked") or 0),
-                                  "usd": float(c.get("usdValue") or 0)}
+                                  "usd": float(c.get("usdValue") or 0), "im": im}
         return out
 
     def place_order(self, **params) -> str:
@@ -239,7 +241,7 @@ class BybitExchange:
 
     def balance(self, coin: str) -> float:
         b = self.c.wallet([coin]).get(coin)
-        return max(0.0, b["wallet"] - b["locked"]) if b else 0.0
+        return max(0.0, b["wallet"] - b["locked"] - b.get("im", 0.0)) if b else 0.0
 
     def holdings(self) -> dict[str, dict]:
         """Все монеты на счёте: количество и стоимость в USD по оценке биржи."""

@@ -201,8 +201,8 @@ class Bot:
         with self.lock:
             before = self.settings()
             values = check_settings(changes, before, self.defaults["coins"])
-            if self.cfg.account == "real" and self.enabled and values.get("capital_usdt", 1) <= 0:
-                raise ValueError("на реальном счёте у включённого бота должен быть задан капитал — "
+            if self.needs_capital and self.enabled and values.get("capital_usdt", 1) <= 0:
+                raise ValueError("у включённого бота здесь должен быть задан капитал — "
                                  "иначе он будет торговать всем балансом")
             self._apply(values)
             after = self.settings()
@@ -243,6 +243,11 @@ class Bot:
         self.store.log("пауза снята")
 
     @property
+    def needs_capital(self) -> bool:
+        """Реальный счёт и раздел фьючерсов (кошелёк общий со спотом): включённый бот — только со своим капиталом."""
+        return self.cfg.account in ("real", "futures")
+
+    @property
     def enabled(self) -> bool:
         """Бот торгует на этом счёте. Выключенный не открывает сделок и не шлёт сигналов,
         но уже открытые позиции ведёт до конца: стоп и выход по тренду."""
@@ -251,8 +256,9 @@ class Bot:
     def set_enabled(self, on: bool) -> str:
         if on == self.enabled:
             return "Бот уже включён" if on else "Бот уже выключен"
-        if on and self.cfg.account == "real" and self.cfg.capital_usdt <= 0:
-            raise ValueError("сначала задайте капитал бота — сколько USDT он может использовать на реальном счёте")
+        if on and self.needs_capital and self.cfg.capital_usdt <= 0:
+            where = "на реальном счёте" if self.cfg.account == "real" else "на фьючерсах (деньги общие со спотом)"
+            raise ValueError(f"сначала задайте капитал бота — сколько USDT он может использовать {where}")
         self.store.set("enabled", on)
         if not on:
             for p in self.store.pending_proposals():

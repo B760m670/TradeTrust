@@ -6,13 +6,13 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from tradetrust import backtest as bt
-from tradetrust.bot.accounts import check_key
-from tradetrust.bot.bybit import BybitClient, LinearExchange
+from tradetrust.bot.accounts import Accounts, check_key
+from tradetrust.bot.bybit import BybitClient, BybitExchange, LinearExchange
 from tradetrust.bot.config import Config
 from tradetrust.bot.engine import Bot
 from tradetrust.bot.store import Store
 
-from test_bot import FakeResponse, Recorder
+from test_bot import CaptureSession, FakeResponse, Recorder
 
 
 class FakeLinear:
@@ -111,8 +111,8 @@ def exchange(fake):
     return LinearExchange(BybitClient("demo", "K", "S", session=fake, category="linear"), poll_seconds=0)
 
 
-def make_bot(tmp_path, fake):
-    cfg = Config(env="demo", market="linear", mode="auto", coins=["SOL"], db_path=str(tmp_path / "bot.db"),
+def make_bot(tmp_path, fake, db="bot.db"):
+    cfg = Config(env="demo", market="linear", mode="auto", coins=["SOL"], db_path=str(tmp_path / db),
                  risk_pct=1.0, max_position_pct=50.0)
     bot = Bot(cfg, exchange(fake), Store(cfg.db_path), Recorder())
     bot.params = bt.Params(fast=3, slow=6, atr_period=3, atr_mult=cfg.atr_mult, risk=cfg.risk_pct / 100)
@@ -181,7 +181,32 @@ def test_key_for_copy_trading_needs_contract_rights():
 
 
 def test_config_rejects_paper_futures():
-    with pytest.raises(ValueError, match="BYBIT_MARKET"):
+    with pytest.raises(ValueError, match="рынок"):
         Config(env="demo", api_key="a", api_secret="b", market="margin").validate()
     with pytest.raises(ValueError, match="спот"):
-        Config(env="paper", market="linear").validate()
+        Config(env="paper", futures=True).validate()
+
+
+def test_futures_is_a_section_of_the_same_account(tmp_path):
+    """Спот и фьючерсы — один счёт Bybit: переключение в приложении, свой бот, без капитала фьючерсы не включить."""
+    main = Bot(Config(env="demo", coins=["SOL"], db_path=str(tmp_path / "bot.db")), exchange(FakeLinear()),
+               Store(str(tmp_path / "bot.db")), Recorder())
+    fut = make_bot(tmp_path, FakeLinear(), "futures.db")
+    fut.cfg.account, fut.cfg.bot_enabled = "futures", False
+    acc = Accounts(main, futures=fut)
+    info = acc.info()
+    assert [(a["id"], a["market"]) for a in info["list"]] == [("main", "spot"), ("futures", "linear")]
+    assert acc.label("futures") == "Демо-счёт Bybit · фьючерсы"
+    assert acc.switch("futures") == "Счёт: Демо-счёт Bybit · фьючерсы" and acc.active() is fut
+    with pytest.raises(ValueError, match="капитал"):
+        fut.set_enabled(True)
+    fut.update_settings({"capital_usdt": 300})
+    assert fut.set_enabled(True) == "Бот включён"
+    with pytest.raises(ValueError, match="реальный"):
+        acc.switch("real")
+
+
+def test_spot_balance_leaves_money_under_futures_positions():
+    s = CaptureSession({"list": [{"coin": [{"coin": "USDT", "walletBalance": "1000", "locked": "10",
+                                            "totalPositionIM": "300", "totalOrderIM": "50", "usdValue": "1000"}]}]})
+    assert BybitExchange(BybitClient("demo", "K", "S", session=s)).balance("USDT") == 640

@@ -8,7 +8,7 @@ from pathlib import Path
 from dataclasses import replace
 
 from . import admin, api
-from .accounts import REAL_TAG, Accounts, TaggedNotifier, check_key
+from .accounts import FUTURES_TAG, REAL_TAG, Accounts, TaggedNotifier, check_key
 from .bybit import BybitClient, BybitExchange, LinearExchange
 from .config import Config
 from .engine import Bot, next_bar_close
@@ -21,27 +21,37 @@ log = logging.getLogger("tradetrust.bot")
 RECONCILE_SECONDS = 60
 
 
-def exchange_for(client: BybitClient, market: str) -> BybitExchange:
-    """Спот или фьючерсы USDT для копитрейдинга (только лонг 1x, только пары, которые Bybit даёт копировать)."""
-    return LinearExchange(client) if market == "linear" else BybitExchange(client)
+def connect_futures(cfg: Config, notifier) -> Bot | None:
+    """Раздел «Фьючерсы» основного счёта (BYBIT_FUTURES=1): тот же ключ и кошелёк Bybit, свой бот и своя база.
+    Деньги общие со спотом, поэтому бот здесь выключен, пока не задан его капитал."""
+    if not cfg.futures:
+        return None
+    fcfg = replace(cfg, market="linear", futures=False, account="futures", capital_usdt=0.0, bot_enabled=False,
+                   db_path=str(Path(cfg.db_path).resolve().parent / "futures.db"), coins=list(cfg.coins))
+    client = BybitClient(cfg.env, cfg.api_key, cfg.api_secret, base_url=cfg.base_url or None, category="linear")
+    try:
+        client.sync_time()
+    except Exception:  # без фьючерсов спот всё равно должен работать
+        log.exception("раздел фьючерсов")
+        return None
+    return Bot(fcfg, LinearExchange(client), Store(fcfg.db_path), TaggedNotifier(notifier, FUTURES_TAG) if notifier else None)
 
 
 def connect_real(cfg: Config, notifier) -> tuple[Bot | None, str]:
     """Реальный счёт владельца, если его ключ задан в .env: (бот, почему не подключился)."""
     if not cfg.has_real:
         return None, ""
-    real_cfg = replace(cfg, env="mainnet", market=cfg.real_market, api_key=cfg.real_api_key, api_secret=cfg.real_api_secret,
+    real_cfg = replace(cfg, env="mainnet", futures=False, api_key=cfg.real_api_key, api_secret=cfg.real_api_secret,
                        base_url=cfg.real_base_url, real_api_key="", real_api_secret="", account="real",
                        db_path=str(Path(cfg.db_path).resolve().parent / "real.db"), coins=list(cfg.coins),
                        mode="confirm", capital_usdt=0.0, bot_enabled=False)
-    client = BybitClient("mainnet", real_cfg.api_key, real_cfg.api_secret, base_url=real_cfg.base_url or None,
-                         category=real_cfg.market)
+    client = BybitClient("mainnet", real_cfg.api_key, real_cfg.api_secret, base_url=real_cfg.base_url or None)
     try:
         client.sync_time()
-        error, warn = check_key(client.key_info(), real_cfg.market)
+        error, warn = check_key(client.key_info())
         if error:
             raise ValueError(error)
-        exchange = exchange_for(client, real_cfg.market)
+        exchange = BybitExchange(client)
         exchange.balance("USDT")
     except Exception as exc:
         log.exception("реальный счёт")
@@ -58,8 +68,8 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
         client = BybitClient("mainnet", base_url=cfg.base_url or None)  # только публичные данные
         exchange = PaperExchange(BybitExchange(client), store, cfg.paper_start_usdt)
     else:
-        client = BybitClient(cfg.env, cfg.api_key, cfg.api_secret, base_url=cfg.base_url or None, category=cfg.market)
-        exchange = exchange_for(client, cfg.market)
+        client = BybitClient(cfg.env, cfg.api_key, cfg.api_secret, base_url=cfg.base_url or None)
+        exchange = BybitExchange(client)
     client.sync_time()
     notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id, cfg.webapp_url) if cfg.telegram_token else None
     bot = Bot(cfg, exchange, store, notifier)
@@ -67,7 +77,10 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     market = CachedMarket(BybitExchange(BybitClient("mainnet", base_url=cfg.base_url or None)))
     if cfg.env != "mainnet":
         bot.market = market
-    accounts = Accounts(bot, *connect_real(cfg, notifier))
+    futures = connect_futures(cfg, notifier)
+    if futures is not None and cfg.env != "mainnet":
+        futures.market = market
+    accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures)
     users = None
     if notifier:
         # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых
@@ -134,8 +147,9 @@ def main() -> None:
     demo = f", демо-счетов пользователей: {len(users.all())}" if users is not None else ""
     real = ("\n💰 Реальный счёт подключён" + ("" if accounts.real.enabled else ", бот на нём выключен")
             if accounts.real else f"\n❗ Реальный счёт не подключился: {accounts.real_error}" if accounts.real_error else "")
-    market = ", фьючерсы USDT 1x (копитрейдинг)" if cfg.market == "linear" else ""
-    bot.notify(f"🤖 TradeTrust запущен: {names[cfg.env]}{market}, режим {bot.mode}, монет {len(cfg.coins)}{demo}.{real}"
+    fut = (("\n📈 Раздел «Фьючерсы» (лонг 1x, копитрейдинг)" + ("" if accounts.futures.enabled else
+            ": бот выключен — задайте капитал и включите")) if accounts.futures else "")
+    bot.notify(f"🤖 TradeTrust запущен: {names[cfg.env]}, режим {bot.mode}, монет {len(cfg.coins)}{demo}.{real}{fut}"
                "\n/help — команды")
 
     errors = OwnerErrors()

@@ -29,7 +29,7 @@ HELP = """Команды:
 /close BTC — закрыть позицию по рынку
 /closeall — закрыть все позиции"""
 
-OWNER_HELP = HELP + "\n/account — какой счёт: демо или реальный\n/admin — админка\n/users — демо-счета пользователей"
+OWNER_HELP = HELP + "\n/account — какой счёт: демо, фьючерсы или реальный\n/admin — админка\n/users — демо-счета пользователей"
 NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start."
 
 
@@ -230,15 +230,18 @@ class Telegram:
 
     def account_text(self, name: str) -> str:
         acc = self.accounts
-        if acc is None or acc.real is None:
+        if acc is None or len(acc.bots()) < 2:
             why = f"\nНе подключился: {acc.real_error}" if acc and acc.real_error else ""
-            return ("Реальный счёт не подключён: добавьте ключ Bybit в .env "
-                    "(BYBIT_REAL_API_KEY и BYBIT_REAL_API_SECRET) и перезапустите бота." + why)
-        if name in ("demo", "main", "демо"):
-            return acc.switch("main") + ". Команды и приложение — по нему."
-        if name in ("real", "реальный"):
-            return acc.switch("real") + ". ⚠️ Сделки здесь — настоящие деньги."
-        return f"Сейчас: {acc.label(acc.active_id)}. Переключить: /account demo | real"
+            return ("Других счетов нет: реальный — ключ Bybit в .env (BYBIT_REAL_API_KEY и BYBIT_REAL_API_SECRET), "
+                    "раздел фьючерсов — BYBIT_FUTURES=1; затем перезапустите бота." + why)
+        target = {"demo": "main", "main": "main", "демо": "main", "спот": "main", "spot": "main",
+                  "futures": "futures", "фьючерсы": "futures", "real": "real", "реальный": "real"}.get(name)
+        if target is None or target not in acc.bots():
+            names = " | ".join({"main": "demo", "futures": "futures", "real": "real"}[k] for k in acc.bots())
+            return f"Сейчас: {acc.label(acc.active_id)}. Переключить: /account {names}"
+        warn = {"real": ". ⚠️ Сделки здесь — настоящие деньги.",
+                "futures": ". Фьючерсы, лонг 1x — тот же счёт Bybit, свой бот и капитал."}.get(target, ". Команды и приложение — по нему.")
+        return acc.switch(target) + warn
 
     def status_text(self, bot: Bot | None = None) -> str:
         s = (bot or self.bot).status()

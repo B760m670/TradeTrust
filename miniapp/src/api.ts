@@ -126,10 +126,12 @@ export interface Status {
 }
 
 export interface AccountInfo {
-  id: "main" | "real";
+  id: "main" | "futures" | "real";
   label: string;
   env: Env;
   real: boolean;
+  /** раздел фьючерсов — тот же счёт Bybit, свой бот: лонг 1x для копитрейдинга */
+  market?: "spot" | "linear";
 }
 
 export interface Accounts {

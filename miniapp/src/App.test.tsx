@@ -256,6 +256,23 @@ describe("mini app", () => {
     }
   });
 
+  it("switches between spot and futures of the same account on the trade screen", async () => {
+    const accounts = { active: "main", real_configured: false, real_error: "", list: [
+      { id: "main", label: "Демо-счёт Bybit", env: "demo", real: false, market: "spot" },
+      { id: "futures", label: "Демо-счёт Bybit · фьючерсы", env: "demo", real: false, market: "linear" },
+    ] };
+    Object.assign(status, { accounts });
+    try {
+      await renderApp();
+      fireEvent.click(within(document.querySelector(".bottom-nav") as HTMLElement).getByRole("button", { name: "Торговать" }));
+      expect((await screen.findByRole("radio", { name: "Спот" })).getAttribute("aria-checked")).toBe("true");
+      fireEvent.click(screen.getByRole("radio", { name: "Фьючерсы" }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/account")?.body).toEqual({ account: "futures" }));
+    } finally {
+      Object.assign(status, { accounts: undefined });
+    }
+  });
+
   it("explains how to connect a real account and lets the owner turn the bot on", async () => {
     Object.assign(status, { enabled: false, accounts: { active: "main", real_configured: false, real_error: "",
       list: [{ id: "main", label: "Демо-счёт Bybit", env: "demo", real: false }] } });

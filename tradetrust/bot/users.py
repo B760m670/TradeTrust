@@ -131,7 +131,7 @@ class Users:
     # --- счета --------------------------------------------------------------
     def _config(self, user_id: str, start_usdt: float | None = None) -> Config:
         # стратегия и её значения по умолчанию — как у владельца; счёт — бумажный, бот торгует сам
-        return replace(self.cfg, env="paper", market="spot", real_market="spot", mode="auto", api_key="",
+        return replace(self.cfg, env="paper", market="spot", futures=False, mode="auto", api_key="",
                        api_secret="", capital_usdt=0.0,
                        telegram_chat_id=user_id, db_path=str(self.dir / f"{user_id}.db"), account="demo",
                        coins=list(self.cfg.coins), paper_start_usdt=start_usdt or self.cfg.paper_start_usdt)
