@@ -98,6 +98,9 @@ beforeEach(() => {
     const body = url === "/api/status" ? status
       : url === "/api/portfolio" ? PORTFOLIO
       : url === "/api/admin" ? ADMIN
+      : url.startsWith("/api/venues") ? { coin: "SOL", range_pct: 0.05, missing: ["KuCoin"], rows: [
+        { exchange: "bybit_spot", name: "Bybit", price: 100.02, spread_pct: 0.01, volume_usd: 2e8, stale: false, anomaly: false, thin: false, url: "https://www.bybit.com/trade/spot/SOL/USDT", diff_pct: 0.02 },
+        { exchange: "okex", name: "OKX", price: 99.9, spread_pct: 0.01, volume_usd: 9e7, stale: true, anomaly: false, thin: false, url: null, diff_pct: null }] }
       : url.startsWith("/api/p2p?") || url === "/api/p2p" ? P2P_VIEW
       : url === "/api/p2p/prefs" ? { message: "Сохранено", prefs: P2P_VIEW.market.prefs }
       : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
@@ -211,6 +214,17 @@ describe("mini app", () => {
     } finally {
       Object.assign(status, { p2p: undefined });
     }
+  });
+
+  it("compares the coin's price on the owner's exchanges", async () => {
+    await renderApp();
+    const nav = within(await waitFor(() => document.querySelector(".bottom-nav") as HTMLElement));
+    fireEvent.click(nav.getByRole("button", { name: "Торговать" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Биржи" }));
+    expect(await screen.findByRole("link", { name: "Bybit" })).toBeTruthy();
+    expect(screen.getByText("данные устарели")).toBeTruthy();
+    expect(screen.getByText(/нет пары на: KuCoin/)).toBeTruthy();
+    expect(calls.some((c) => c.url === "/api/venues?coin=SOL")).toBe(true);
   });
 
   it("buys by hand on the trade screen", async () => {

@@ -252,6 +252,15 @@ export interface P2PView {
   stats?: Record<string, P2PStats>;
 }
 
+export interface VenueRow {
+  exchange: string; name: string; price: number; spread_pct: number | null; volume_usd: number;
+  stale: boolean; anomaly: boolean; thin: boolean; url: string | null; diff_pct: number | null;
+}
+export interface VenuePrices {
+  coin: string; rows: VenueRow[]; median?: number | null; range_pct?: number | null; missing?: string[];
+  updated_at?: number; source?: string; error?: string;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -300,6 +309,7 @@ export const api = {
   saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
   order: (coin: string, side: "buy" | "sell", usdt: number) => request<Message>("/api/order", "POST", { coin, side, usdt }),
   admin: () => request<AdminData>("/api/admin"),
+  venues: (coin: string) => request<VenuePrices>(`/api/venues?coin=${coin}`),
   p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
   p2pPrefs: (currency: string, changes: Partial<P2PPrefs>) =>
     request<{ message: string; prefs: P2PPrefs }>("/api/p2p/prefs", "POST", { currency, ...changes }),

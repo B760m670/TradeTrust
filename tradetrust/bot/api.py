@@ -32,9 +32,9 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None, telegram=None, accounts=None, p2p=None):
+                 users=None, telegram=None, accounts=None, p2p=None, venues=None):
     """accounts — счета владельца (основной и реальный): владельцу отвечает тот, что сейчас выбран;
-    p2p — P2P владельца (только чтение), если включён."""
+    p2p — P2P владельца (только чтение), если включён; venues — цены монеты на биржах (CoinGecko)."""
     web_dir = web_dir.resolve()
 
     def owner_now() -> Bot:
@@ -155,6 +155,13 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._send(200, admin_data())
+                if url.path == "/api/venues":
+                    coin = (parse_qs(url.query).get("coin") or [""])[0].upper()
+                    if venues is None:
+                        return self._send(200, {"coin": coin, "rows": [], "error": "сравнение бирж выключено"})
+                    if coin not in {*bot.watched_coins(), *bot.tradable_coins()}:
+                        return self._send(400, {"error": "unknown coin"})
+                    return self._send(200, venues.prices(coin))
                 if url.path == "/api/p2p":
                     if not self.owner:
                         return self._send(403, {"error": "P2P — только для владельца"})
@@ -272,9 +279,10 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
-          web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None, p2p=None) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(bot, token, tg_token, owner_id, web_dir, users, telegram, accounts, p2p))
+          web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None, p2p=None,
+          venues=None) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir, users,
+                                                                 telegram, accounts, p2p, venues))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

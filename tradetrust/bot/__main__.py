@@ -13,6 +13,7 @@ from .bybit import BybitClient, BybitExchange, LinearExchange
 from .config import Config
 from .engine import Bot, next_bar_close
 from .p2p import P2PClient, P2PDesk
+from .venues import Venues
 from .paper import PaperExchange
 from .store import Store
 from .telegram import Telegram
@@ -124,7 +125,7 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
         notifier.start(bot, users, accounts)
     # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
     api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users,
-              telegram=notifier, accounts=accounts, p2p=accounts.p2p)
+              telegram=notifier, accounts=accounts, p2p=accounts.p2p, venues=Venues(cfg.coingecko_api_key))
     return accounts, users
 
 
