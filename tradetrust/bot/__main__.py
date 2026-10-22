@@ -97,7 +97,10 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     else:
         client = BybitClient(cfg.env, cfg.api_key, cfg.api_secret, base_url=cfg.base_url or None)
         exchange = BybitExchange(client)
-    client.sync_time()
+    try:
+        client.sync_time()
+    except Exception:
+        log.exception("синхронизация времени с Bybit")  # не повод не запускаться: ключ проверим ниже
     notifier = Telegram(cfg.telegram_token, cfg.telegram_chat_id, cfg.webapp_url) if cfg.telegram_token else None
     bot = Bot(cfg, exchange, store, notifier)
     # публичные данные основного рынка, общие для всех: графики владельца и цены демо-счетов пользователей
@@ -108,13 +111,25 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     if futures is not None and cfg.env != "mainnet":
         futures.market = market
     accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures)
-    accounts.p2p = connect_p2p(cfg, notifier, store)
+    # необязательные разделы: их сбой не должен ронять бота (иначе мини-приложение — серый экран)
+    try:
+        accounts.p2p = connect_p2p(cfg, notifier, store)
+    except Exception as exc:
+        log.exception("P2P")
+        cfg.problems.append(f"P2P не подключился: {exc}")
     # «Мои биржи»: Bybit — ключ реального счёта, остальные — ключи только для чтения из .env
-    accounts.exchanges = my_exchanges(cfg, accounts.real.ex.c if accounts.real else None)
-    if accounts.exchanges:
-        lines = accounts.exchanges.connect()
-        threading.Thread(target=accounts.exchanges.refresh, kwargs={"force": True}, daemon=True).start()
-        bot.notify("🏦 Мои биржи:\n" + "\n".join(lines))
+    try:
+        accounts.exchanges = my_exchanges(cfg, accounts.real.ex.c if accounts.real else None)
+        if accounts.exchanges:
+            lines = accounts.exchanges.connect()
+            threading.Thread(target=accounts.exchanges.refresh, kwargs={"force": True}, daemon=True).start()
+            bot.notify("🏦 Мои биржи:\n" + "\n".join(lines))
+    except Exception as exc:
+        log.exception("Мои биржи")
+        accounts.exchanges = None
+        cfg.problems.append(f"«Мои биржи» не подключились: {exc}")
+    if cfg.problems:
+        bot.notify("⚠️ Проверьте .env:\n" + "\n".join(f"• {p}" for p in cfg.problems))
     users = None
     if notifier:
         # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых

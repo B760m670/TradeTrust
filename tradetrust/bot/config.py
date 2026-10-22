@@ -46,6 +46,8 @@ class Config:
     market: str = "spot"               # рынок этого бота: spot или linear (у раздела фьючерсов), из .env не задаётся
     mode: str = "confirm"              # signals — только сигналы, confirm — сделка после подтверждения, auto — сам
     coins: list[str] = field(default_factory=lambda: list(COINS))
+    # ошибки в настройках необязательных разделов (P2P, «Мои биржи»): раздел выключается, бот запускается
+    problems: list[str] = field(default_factory=list)
     risk_pct: float = 0.3              # маленький риск на все монеты — см. scripts/portfolio_study.py
     atr_mult: float = 2.0
     ema_fast: int = 20
@@ -141,16 +143,22 @@ class Config:
             raise ValueError(f"рынок: {' или '.join(MARKETS)}")
         if self.env == "paper" and (self.futures or self.market != "spot"):
             raise ValueError("Бумажный счёт торгует только спот — для фьючерсов нужен счёт Bybit (BYBIT_ENV=demo)")
+        # необязательные разделы: ошибка в их ключах не должна останавливать бота — раздел выключаем и сообщаем
+        if bool(self.p2p_api_key) != bool(self.p2p_api_secret):
+            self.problems.append("Для P2P нужны оба: BYBIT_P2P_API_KEY и BYBIT_P2P_API_SECRET")
+            self.p2p_api_key = self.p2p_api_secret = ""
         if self.p2p and not (self.p2p_api_key or self.real_api_key or self.env == "mainnet"):
-            raise ValueError("Для P2P нужен ключ реального счёта (BYBIT_REAL_API_KEY) или BYBIT_P2P_API_KEY")
-        for name, parts in (("BINANCE", (self.binance_api_key, self.binance_api_secret)),
-                            ("OKX", (self.okx_api_key, self.okx_api_secret, self.okx_passphrase)),
-                            ("KUCOIN", (self.kucoin_api_key, self.kucoin_api_secret, self.kucoin_passphrase))):
+            self.problems.append("Для P2P нужен ключ реального счёта (BYBIT_REAL_API_KEY) или BYBIT_P2P_API_KEY")
+            self.p2p = False
+        for name, attrs in (("BINANCE", ("binance_api_key", "binance_api_secret")),
+                            ("OKX", ("okx_api_key", "okx_api_secret", "okx_passphrase")),
+                            ("KUCOIN", ("kucoin_api_key", "kucoin_api_secret", "kucoin_passphrase"))):
+            parts = [getattr(self, a) for a in attrs]
             if any(parts) and not all(parts):
                 need = "ключ, секрет и пароль ключа (PASSPHRASE)" if len(parts) == 3 else "ключ и секрет"
-                raise ValueError(f"Для {name} нужны {need}")
-        if bool(self.p2p_api_key) != bool(self.p2p_api_secret):
-            raise ValueError("Для P2P нужны оба: BYBIT_P2P_API_KEY и BYBIT_P2P_API_SECRET")
+                self.problems.append(f"Для {name} нужны {need} — биржа не подключена")
+                for a in attrs:
+                    setattr(self, a, "")
         if self.mode not in MODES:
             raise ValueError(f"MODE должен быть одним из {MODES}")
         if self.env != "paper" and not (self.api_key and self.api_secret):

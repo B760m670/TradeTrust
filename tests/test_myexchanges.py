@@ -126,6 +126,10 @@ def test_rejected_key_is_not_used_and_errors_are_shown():
 
 
 def test_config_needs_all_parts_of_a_key():
-    with pytest.raises(ValueError, match="OKX"):
-        Config(okx_api_key="k", okx_api_secret="s").validate()
-    Config(kucoin_api_key="k", kucoin_api_secret="s", kucoin_passphrase="p").validate()
+    cfg = Config(okx_api_key="k", okx_api_secret="s", p2p_api_key="k", p2p=True)
+    cfg.validate()  # не останавливает бота: раздел выключается, причина — в списке проблем
+    assert not cfg.okx_api_key and not cfg.p2p and len(cfg.problems) == 3
+    assert any("OKX" in p and "PASSPHRASE" in p for p in cfg.problems)
+    ok = Config(kucoin_api_key="k", kucoin_api_secret="s", kucoin_passphrase="p")
+    ok.validate()
+    assert ok.problems == [] and ok.kucoin_api_key == "k"
