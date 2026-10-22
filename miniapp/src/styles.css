@@ -846,3 +846,4 @@ h3.section-title { margin: 22px 0 10px; }
   font-size: 10px; line-height: 14px; pointer-events: none; }
 .ind-legend .ind-title { color: var(--muted); }
 .chart-wrap .zoom { top: auto; bottom: 34px; }
+.order-note { margin: 0; padding: 10px 4px; text-align: center; }

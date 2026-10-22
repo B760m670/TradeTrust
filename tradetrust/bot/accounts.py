@@ -13,15 +13,17 @@ LABELS = {"paper": "Бумажный счёт", "demo": "Демо-счёт Bybit
 REAL_TAG = "💰 Реальный счёт\n"
 
 
-def check_key(info: dict) -> tuple[str, str]:
+def check_key(info: dict, market: str = "spot") -> tuple[str, str]:
     """Проверка ключа реального счёта: (ошибка, предупреждение). С ошибкой счёт не подключается."""
     perms = info.get("permissions") or {}
     if any("Withdraw" in (v or []) for v in perms.values()):
         return "у ключа есть право на вывод средств — создайте ключ без вывода", ""
     if info.get("readOnly") == 1:
         return "ключ только для чтения — торговать им нельзя", ""
-    if "SpotTrade" not in (perms.get("Spot") or []):
+    if market == "spot" and "SpotTrade" not in (perms.get("Spot") or []):
         return "у ключа нет права «Спот — торговля»", ""
+    if market == "linear" and not {"Order", "Position"} <= set(perms.get("ContractTrade") or []):
+        return "у ключа нет права «Контракты — ордера и позиции» (нужно для копитрейдинга)", ""
     ips = [ip for ip in info.get("ips") or [] if ip and ip != "*"]
     warn = "" if ips else "ключ не привязан к IP сервера — привяжите его в настройках ключа на Bybit"
     return "", warn

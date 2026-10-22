@@ -36,6 +36,7 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
   const { data: portfolio, reload } = usePortfolio();
   const holding = portfolio?.assets.find((a) => a.coin === coin);
   const ownQty = Math.max(0, (holding?.qty ?? 0) - (holding?.bot_qty ?? 0));
+  const futures = s.market === "linear";
   const usdtFree = portfolio?.assets.find((a) => a.coin === "USDT")?.qty ?? s.equity.free;
   const [picker, setPicker] = useState(false);
   const [side, setSide] = useState<Side | null>(null);
@@ -49,7 +50,7 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           <span className="pair-name"><strong>{coin}</strong><span className="muted">/USDT</span></span>
           <ChevronIcon size={18} />
         </button>
-        <span className="spot-tag">СПОТ</span>
+        <span className="spot-tag">{futures ? "ФЬЮЧЕРСЫ 1x" : "СПОТ"}</span>
         <span className="grow" />
         <AccountBadge real={s.env === "mainnet"} />
       </header>
@@ -77,11 +78,11 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
           {panel === "position" && <BotPosition coin={coin} status={s} busy={busy} act={act} />}
           {panel === "orders" && <MyTrades coin={coin} status={s} ownQty={ownQty} price={now} />}
           {panel === "bot" && <Indicators coin={coin} status={s} />}
-          {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} />}
+          {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} futures={futures} />}
         </div>
       </div>
 
-      {!wide && <div className="trade-bar"><OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} /></div>}
+      {!wide && <div className="trade-bar"><OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} futures={futures} /></div>}
 
       {side && now != null && (
         <OrderSheet coin={coin} side={side} price={now} usdtFree={usdtFree} ownQty={ownQty} busy={busy}
@@ -104,8 +105,14 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
   );
 }
 
-function OrderButtons({ onSide, canSell, price: px }: { onSide: (s: Side) => void; canSell: boolean; price?: number }) {
+function OrderButtons({ onSide, canSell, price: px, futures }: {
+  onSide: (s: Side) => void; canSell: boolean; price?: number; futures?: boolean;
+}) {
   const sub = px == null ? "по рынку" : `по рынку · ${chartPrice(px)}`;
+  if (futures) {
+    // на счёте копитрейдинга торгует только бот: ручная сделка смешалась бы с его позицией и ушла бы подписчикам
+    return <p className="muted small order-note">Счёт копитрейдинга: сделки открывает только бот, подписчики Bybit повторяют их.</p>;
+  }
   return (
     <div className="order-buttons">
       <Button variant="up" onClick={() => { haptic(); onSide("buy"); }}><span>Купить</span><small>{sub}</small></Button>

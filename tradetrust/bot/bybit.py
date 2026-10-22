@@ -1,7 +1,9 @@
-"""Клиент Bybit V5 (спот) и биржевой слой бота.
+"""Клиент Bybit V5 и биржевой слой бота.
 
-Только спот без плеча (isLeverage=0). Стоп-лосс — отдельный условный ордер
-(orderFilter=StopOrder): рыночная продажа при падении цены до triggerPrice.
+Спот без плеча (isLeverage=0): стоп-лосс — отдельный условный ордер (orderFilter=StopOrder),
+рыночная продажа при падении цены до triggerPrice.
+Бессрочные фьючерсы USDT (linear) — для копитрейдинга: Bybit копирует подписчикам только их.
+Бот там только покупает (лонг) с плечом 1x и на сумму не больше своих денег — по риску это тот же спот.
 """
 from __future__ import annotations
 
@@ -45,6 +47,7 @@ class Instrument:
     tick: Decimal           # шаг цены
     min_amount: Decimal     # минимальная сумма ордера в USDT
     max_market_qty: Decimal
+    copy_trading: bool = True  # фьючерс доступен в копитрейдинге (на споте не используется)
 
     def floor_qty(self, qty: float) -> Decimal:
         return (Decimal(str(qty)) / self.base_step).to_integral_value(ROUND_DOWN) * self.base_step
@@ -64,8 +67,10 @@ class Fill:
 
 class BybitClient:
     def __init__(self, env: str = "mainnet", api_key: str = "", api_secret: str = "",
-                 base_url: str | None = None, recv_window: int = 5000, session: requests.Session | None = None):
+                 base_url: str | None = None, recv_window: int = 5000, session: requests.Session | None = None,
+                 category: str = "spot"):
         self.base = (base_url or ENDPOINTS[env]).rstrip("/")
+        self.category = category  # spot | linear (бессрочные фьючерсы USDT)
         self.key, self.secret = api_key, api_secret
         self.recv_window = str(recv_window)
         self.http = session or requests.Session()
@@ -125,7 +130,7 @@ class BybitClient:
         end — время в мс: свечи, открытые не позже него (для подгрузки истории)."""
         code, ms = INTERVALS[interval]
         rows = self._request("GET", "/v5/market/kline",
-                             {"category": "spot", "symbol": symbol, "interval": code, "limit": limit, "end": end})["list"]
+                             {"category": self.category, "symbol": symbol, "interval": code, "limit": limit, "end": end})["list"]
         now = int(time.time() * 1000) + self.time_offset
         rows = [r for r in rows if int(r[0]) + ms <= now]
         df = pd.DataFrame([r[:6] for r in rows], columns=["time", "open", "high", "low", "close", "volume"])
@@ -133,21 +138,25 @@ class BybitClient:
         return df.set_index("time").astype(float).sort_index()
 
     def last_price(self, symbol: str) -> float:
-        rows = self._request("GET", "/v5/market/tickers", {"category": "spot", "symbol": symbol})["list"]
+        rows = self._request("GET", "/v5/market/tickers", {"category": self.category, "symbol": symbol})["list"]
         return float(rows[0]["lastPrice"])
 
     def recent_trades(self, symbol: str, limit: int = 60) -> list[dict]:
         """Последние сделки на рынке (спот отдаёт до 60): время в мс, цена, объём — по возрастанию времени."""
         rows = self._request("GET", "/v5/market/recent-trade",
-                             {"category": "spot", "symbol": symbol, "limit": limit})["list"]
+                             {"category": self.category, "symbol": symbol, "limit": limit})["list"]
         return sorted(({"t": int(r["time"]), "p": float(r["price"]), "v": float(r["size"])} for r in rows),
                       key=lambda r: r["t"])
 
     def instrument(self, symbol: str) -> Instrument:
-        rows = self._request("GET", "/v5/market/instruments-info", {"category": "spot", "symbol": symbol})["list"]
+        rows = self._request("GET", "/v5/market/instruments-info", {"category": self.category, "symbol": symbol})["list"]
         if not rows:
             raise BybitError(-1, "symbol not found", symbol)
         lot, price = rows[0]["lotSizeFilter"], rows[0]["priceFilter"]
+        if self.category == "linear":
+            return Instrument(symbol, Decimal(lot["qtyStep"]), Decimal(price["tickSize"]),
+                              Decimal(lot.get("minNotionalValue") or "5"), Decimal(lot.get("maxMktOrderQty") or "1e18"),
+                              copy_trading=rows[0].get("copyTrading", "none") != "none")
         return Instrument(symbol, Decimal(lot["basePrecision"]), Decimal(price["tickSize"]),
                           Decimal(lot.get("minOrderAmt") or "5"), Decimal(lot.get("maxMarketOrderQty") or "1e18"))
 
@@ -167,21 +176,34 @@ class BybitClient:
         return out
 
     def place_order(self, **params) -> str:
-        params = {"category": "spot", "isLeverage": 0, "orderLinkId": f"tt-{uuid.uuid4().hex[:28]}", **params}
+        spot = {"isLeverage": 0} if self.category == "spot" else {}
+        params = {"category": self.category, **spot, "orderLinkId": f"tt-{uuid.uuid4().hex[:28]}", **params}
         return self._request("POST", "/v5/order/create", params, auth=True)["orderId"]
+
+    def positions(self) -> list[dict]:
+        """Открытые позиции по фьючерсам USDT."""
+        rows = self._request("GET", "/v5/position/list", {"category": self.category, "settleCoin": "USDT"},
+                             auth=True).get("list", [])
+        return [r for r in rows if float(r.get("size") or 0) > 0]
+
+    def set_leverage(self, symbol: str, leverage: str = "1") -> None:
+        self._request("POST", "/v5/position/set-leverage", {"category": self.category, "symbol": symbol,
+                                                            "buyLeverage": leverage, "sellLeverage": leverage}, auth=True)
 
     def get_order(self, symbol: str, order_id: str) -> dict | None:
         """Открытый или недавно закрытый ордер; если его уже нет в «realtime» — ищем в истории."""
         for path in ("/v5/order/realtime", "/v5/order/history"):
-            rows = self._request("GET", path, {"category": "spot", "symbol": symbol, "orderId": order_id},
+            rows = self._request("GET", path, {"category": self.category, "symbol": symbol, "orderId": order_id},
                                  auth=True).get("list", [])
             if rows:
                 return rows[0]
         return None
 
     def cancel_order(self, symbol: str, order_id: str, order_filter: str = "StopOrder") -> None:
-        self._request("POST", "/v5/order/cancel", {"category": "spot", "symbol": symbol, "orderId": order_id,
-                                                    "orderFilter": order_filter}, auth=True)
+        # orderFilter нужен только на споте: условный ордер фьючерса отменяется просто по id
+        self._request("POST", "/v5/order/cancel", {"category": self.category, "symbol": symbol, "orderId": order_id,
+                                                    "orderFilter": order_filter if self.category == "spot" else None},
+                      auth=True)
 
 
 def fee_in(order: dict, coin: str) -> float:
@@ -269,3 +291,93 @@ class BybitExchange:
             # 170213 / 110001: ордера уже нет (сработал или отменён) — продолжаем закрытие
             if exc.code not in (170213, 110001):
                 raise
+
+
+class LinearExchange(BybitExchange):
+    """Фьючерсы USDT для копитрейдинга с тем же поведением, что спот у бота: позиция — «купленные монеты»,
+    USDT — деньги, не вложенные в позиции, стоп — условная продажа reduceOnly.
+    Плечо 1x и сумма не больше своих денег, поэтому ликвидации практически нет."""
+
+    futures = True
+    POSITION_MODE_ERROR = 10001  # positionIdx не подходит к режиму позиций счёта
+    LEVERAGE_NOT_MODIFIED = 110043
+
+    def __init__(self, client: BybitClient, copy_only: bool = True, **kw):
+        super().__init__(client, **kw)
+        self.copy_only = copy_only
+        self.position_idx = 0  # 0 — односторонний режим; 1 — лонг в режиме хеджирования (так у копитрейдинга)
+        self._leverage_set: set[str] = set()
+
+    def instrument(self, symbol: str) -> Instrument:
+        inst = super().instrument(symbol)
+        if self.copy_only and not inst.copy_trading:
+            raise BybitError(-1, "фьючерс недоступен в копитрейдинге", symbol)
+        return inst
+
+    def _longs(self) -> dict[str, dict]:
+        return {r["symbol"]: r for r in self.c.positions() if r.get("side") == "Buy"}
+
+    def balance(self, coin: str) -> float:
+        longs = self._longs()
+        if coin == "USDT":
+            usdt = self.c.wallet(["USDT"]).get("USDT")
+            invested = sum(float(r["size"]) * float(r["avgPrice"]) for r in longs.values())
+            return max(0.0, (usdt["wallet"] if usdt else 0.0) - invested)
+        row = longs.get(f"{coin}USDT")
+        return float(row["size"]) if row else 0.0
+
+    def holdings(self) -> dict[str, dict]:
+        cash = self.balance("USDT")
+        out = {"USDT": {"qty": cash, "usd": cash}}
+        for sym, r in self._longs().items():
+            size = float(r["size"])
+            out[sym.removesuffix("USDT")] = {"qty": size, "usd": size * float(r.get("markPrice") or r["avgPrice"])}
+        return out
+
+    def _order(self, **params) -> str:
+        """Ордер с positionIdx; если счёт в режиме хеджирования (копитрейдинг), запоминаем это и повторяем."""
+        try:
+            return self.c.place_order(positionIdx=self.position_idx, **params)
+        except BybitError as exc:
+            if exc.code != self.POSITION_MODE_ERROR:
+                raise
+            self.position_idx = 1 - self.position_idx
+            return self.c.place_order(positionIdx=self.position_idx, **params)
+
+    @staticmethod
+    def _fill(oid: str, o: dict) -> Fill:
+        return Fill(oid, float(o.get("cumExecQty") or 0), float(o.get("avgPrice") or 0), float(o.get("cumExecFee") or 0))
+
+    def market_buy(self, symbol: str, coin: str, qty: Decimal) -> Fill:
+        if symbol not in self._leverage_set:
+            try:
+                self.c.set_leverage(symbol, "1")
+            except BybitError as exc:
+                if exc.code != self.LEVERAGE_NOT_MODIFIED:  # плечо уже 1x
+                    raise
+            self._leverage_set.add(symbol)
+        oid = self._order(symbol=symbol, side="Buy", orderType="Market", qty=str(qty))
+        fill = self._fill(oid, self._wait_final(symbol, oid))
+        if fill.qty <= 0:
+            raise RuntimeError(f"Покупка {symbol} не исполнилась")
+        return fill
+
+    def market_sell(self, symbol: str, qty: Decimal) -> Fill:
+        oid = self._order(symbol=symbol, side="Sell", orderType="Market", qty=str(qty), reduceOnly=True)
+        return self._fill(oid, self._wait_final(symbol, oid))
+
+    def place_stop(self, symbol: str, qty: Decimal, trigger: Decimal) -> str:
+        # triggerDirection=2 — срабатывает при падении цены до triggerPrice; reduceOnly — только закрывает позицию
+        return self._order(symbol=symbol, side="Sell", orderType="Market", qty=str(qty), triggerPrice=str(trigger),
+                           triggerDirection=2, triggerBy="LastPrice", reduceOnly=True)
+
+    def stop_state(self, symbol: str, order_id: str) -> tuple[str, Fill | None]:
+        o = self.c.get_order(symbol, order_id)
+        if o is None:
+            return "gone", None
+        status = o.get("orderStatus")
+        if status in ("Untriggered", "New", "PartiallyFilled", "Triggered"):
+            return "open", None
+        if status == "Filled":
+            return "filled", self._fill(order_id, o)
+        return "gone", None
