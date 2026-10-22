@@ -166,6 +166,23 @@ describe("mini app", () => {
     expect(screen.getByText("сработал стоп", { exact: false })).toBeTruthy();
   });
 
+  it("shows the owner's open Bybit orders for the coin, without the bot's stops", async () => {
+    const tp = { id: "tp1", coin: "SOL", side: "sell", kind: "tp", type: "market", price: null, trigger: 142, qty: 4.5, created: 1, bot: false };
+    const botStop = { ...tp, id: "s1", kind: "sl", trigger: 90, bot: true };
+    Object.assign(PORTFOLIO, { open_orders: [tp, botStop] });
+    try {
+      await renderApp();
+      const nav = within(await waitFor(() => document.querySelector(".bottom-nav") as HTMLElement));
+      fireEvent.click(nav.getByRole("button", { name: "Торговать" }));
+      fireEvent.click(await screen.findByRole("tab", { name: "Мои сделки" }));
+      const card = (await screen.findByText("Открытые ордера")).closest(".card") as HTMLElement;
+      expect(within(card).getByText(/Тейк-профит · при цене ≥ 142/)).toBeTruthy();
+      expect(within(card).getAllByText("4,5 SOL")).toHaveLength(1); // стоп бота здесь не показываем
+    } finally {
+      Object.assign(PORTFOLIO, { open_orders: undefined });
+    }
+  });
+
   it("buys by hand on the trade screen", async () => {
     await renderApp();
     const nav = within(await waitFor(() => document.querySelector(".bottom-nav") as HTMLElement));

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type Status } from "../api";
+import { useMemo, useState } from "react";
+import { api, type OpenOrder, type Status } from "../api";
 import type { Act } from "../components/BotControls";
 import { ChartCard } from "../components/ChartCard";
 import { ChevronIcon } from "../components/icons";
@@ -39,6 +39,12 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
   const futures = s.market === "linear";
   // «Спот | Фьючерсы» — только на демо-счёте с разделом фьючерсов; на реальном метка счёта всегда видна
   const sections = !!s.accounts?.list.some((a) => a.id === "futures") && s.accounts.active !== "real";
+  // ваши ордера на бирже по этой монете (стопы бота уже показаны в его позиции)
+  const openOrders = (portfolio?.open_orders ?? []).filter((o) => o.coin === coin && !o.bot);
+  const levels = useMemo(() => openOrders.flatMap((o) => {
+    const at = o.trigger ?? o.price;
+    return at ? [{ price: at, title: orderTitle(o), tone: o.kind === "tp" ? "up" as const : o.kind === "limit" ? "text" as const : "down" as const }] : [];
+  }), [openOrders.map((o) => `${o.id}:${o.trigger}:${o.price}`).join("|")]);
   const usdtFree = portfolio?.assets.find((a) => a.coin === "USDT")?.qty ?? s.equity.free;
   const [picker, setPicker] = useState(false);
   const [side, setSide] = useState<Side | null>(null);
@@ -73,11 +79,12 @@ export function Trade({ coin, status: s, busy, act, wide, onCoin }: Props) {
       </section>
 
       <div className="coin-grid">
-        <ChartCard coin={coin} status={s} tall={wide} className="coin-chart" />
+        <ChartCard coin={coin} status={s} tall={wide} className="coin-chart" levels={levels} />
 
         <div className="coin-side">
           <Tabs label="Панель" options={PANELS} value={panel} onChange={setPanel} />
           {panel === "position" && <BotPosition coin={coin} status={s} busy={busy} act={act} />}
+          {panel === "orders" && openOrders.length > 0 && <OpenOrders orders={openOrders} price={now} />}
           {panel === "orders" && <MyTrades coin={coin} status={s} ownQty={ownQty} price={now} />}
           {panel === "bot" && <Indicators coin={coin} status={s} />}
           {wide && <OrderButtons onSide={setSide} canSell={ownQty > 0} price={now} futures={futures} />}
@@ -175,6 +182,43 @@ function BotPosition({ coin, status: s, busy, act }: { coin: string; status: Sta
       ) : (
         <Empty title={`Бот не держит ${coin}`}>Сейчас: {state.label.toLowerCase()}. Бот войдёт сам, когда появится сигнал.</Empty>
       )}
+    </Card>
+  );
+}
+
+function orderTitle(o: OpenOrder): string {
+  if (o.kind === "tp") return "TP";
+  if (o.kind === "sl" || o.kind === "stop") return "SL";
+  return o.side === "buy" ? "лимит покупка" : "лимит продажа";
+}
+
+/** Ордера, открытые на Bybit: тейк-профит, стоп, лимитные — сколько осталось до цены срабатывания. */
+function OpenOrders({ orders, price: px }: { orders: OpenOrder[]; price: number | undefined }) {
+  return (
+    <Card title="Открытые ордера" aside={<span className="muted small">бот не трогает</span>}>
+      <div className="list">
+        {orders.map((o) => {
+          const at = o.trigger ?? o.price;
+          const dist = at && px ? (at / px - 1) * 100 : null;
+          const what = o.kind === "tp" ? "Тейк-профит" : o.kind === "limit" ? "Лимитный" : "Стоп-лосс";
+          return (
+            <div key={o.id} className="list-row trade">
+              <Chip tone={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "Покупка" : "Продажа"}</Chip>
+              <div className="row-main">
+                <strong className="num">{price(o.qty)} {o.coin}</strong>
+                <span className="muted small">
+                  {what} · {o.trigger ? `при цене ${o.trigger >= (px ?? 0) ? "≥" : "≤"} ${price(o.trigger)}` : `по ${price(o.price ?? 0)}`}
+                  {o.trigger && o.type === "market" ? " · по рынку" : ""}
+                </span>
+              </div>
+              <div className="order-at">
+                <strong className="num">{at ? price(at) : "—"}</strong>
+                {dist != null && <span className={`small num tone-${tone(dist)}`}>{pct(dist, true)} до цены</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }

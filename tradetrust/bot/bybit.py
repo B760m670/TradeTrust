@@ -182,6 +182,17 @@ class BybitClient:
         params = {"category": self.category, **spot, "orderLinkId": f"tt-{uuid.uuid4().hex[:28]}", **params}
         return self._request("POST", "/v5/order/create", params, auth=True)["orderId"]
 
+    def open_orders(self) -> list[dict]:
+        """Открытые ордера счёта: обычные и условные (TP/SL, стоп). На споте Bybit отдаёт их по отдельным фильтрам."""
+        filters = ("Order", "tpslOrder", "StopOrder") if self.category == "spot" else (None,)
+        found: dict[str, dict] = {}
+        for f in filters:
+            params = {"category": self.category, "orderFilter": f, "limit": 50,
+                      "settleCoin": "USDT" if self.category == "linear" else None}
+            for r in self._request("GET", "/v5/order/realtime", params, auth=True).get("list", []):
+                found[r["orderId"]] = r
+        return list(found.values())
+
     def positions(self) -> list[dict]:
         """Открытые позиции по фьючерсам USDT."""
         rows = self._request("GET", "/v5/position/list", {"category": self.category, "settleCoin": "USDT"},
@@ -238,6 +249,29 @@ class BybitExchange:
 
     def recent_trades(self, symbol: str) -> list[dict]:
         return self.c.recent_trades(symbol)
+
+    def open_orders(self) -> list[dict]:
+        """Ордера к USDT, открытые на бирже: лимитные и условные. kind — limit | tp | sl | stop."""
+        out = []
+        for o in self.c.open_orders():
+            sym = o.get("symbol", "")
+            if not sym.endswith("USDT"):
+                continue
+            trigger = float(o.get("triggerPrice") or 0) or None
+            side = "buy" if o.get("side") == "Buy" else "sell"
+            kind = {"TakeProfit": "tp", "PartialTakeProfit": "tp", "StopLoss": "sl", "PartialStopLoss": "sl"}.get(
+                o.get("stopOrderType") or "")
+            if kind is None and trigger:
+                # TP/SL на споте: продажа при росте цены — тейк-профит, при падении — стоп (для покупки наоборот)
+                rising = str(o.get("triggerDirection")) == "1"
+                kind = "tp" if rising == (side == "sell") else "sl"
+            out.append({
+                "id": o["orderId"], "coin": sym.removesuffix("USDT"), "side": side, "kind": kind or "limit",
+                "type": "market" if o.get("orderType") == "Market" else "limit",
+                "price": float(o.get("price") or 0) or None, "trigger": trigger,
+                "qty": float(o.get("qty") or 0), "created": int(o.get("createdTime") or 0),
+            })
+        return sorted(out, key=lambda x: -x["created"])
 
     def balance(self, coin: str) -> float:
         b = self.c.wallet([coin]).get(coin)

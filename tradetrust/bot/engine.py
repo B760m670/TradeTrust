@@ -481,8 +481,21 @@ class Bot:
         assets.sort(key=lambda a: -(a["value"] or 0))
         total = sum(a["value"] or 0 for a in assets)
         eq = self.equity()
-        return {"total": total, "assets": assets, "updated_at": now(),
+        return {"total": total, "assets": assets, "updated_at": now(), "open_orders": self.open_orders(),
                 "bot": {"capital": eq["total"], "invested": eq["invested"], "free": eq["free"]}}
+
+    def open_orders(self) -> list[dict]:
+        """Ордера, открытые на бирже (например, тейк-профит владельца); стопы бота помечены bot=True."""
+        fetch = getattr(self.ex, "open_orders", None)
+        if fetch is None:
+            return []
+        try:
+            orders = fetch()
+        except Exception as exc:  # без списка ордеров портфель всё равно нужен
+            log.warning("open orders: %s", exc)
+            return []
+        mine = {p.stop_order_id for p in self.store.positions()}
+        return [{**o, "bot": o["id"] in mine} for o in orders]
 
     # --- капитал во времени и ежедневный отчёт ---------------------------------
     def record_equity(self) -> None:
