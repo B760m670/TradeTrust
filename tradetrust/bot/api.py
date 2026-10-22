@@ -32,9 +32,10 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><p>Мини-приложени�
 
 
 def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str = "", web_dir: Path = WEB_DIR,
-                 users=None, telegram=None, accounts=None, p2p=None, venues=None):
+                 users=None, telegram=None, accounts=None, p2p=None, venues=None, exchanges=None):
     """accounts — счета владельца (основной и реальный): владельцу отвечает тот, что сейчас выбран;
-    p2p — P2P владельца (только чтение), если включён; venues — цены монеты на биржах (CoinGecko)."""
+    p2p — P2P владельца (только чтение), если включён; venues — цены монеты на биржах (CoinGecko);
+    exchanges — «Мои биржи» владельца (балансы и статусы ввода/вывода, только чтение)."""
     web_dir = web_dir.resolve()
 
     def owner_now() -> Bot:
@@ -148,6 +149,7 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     status = bot.status()
                     status["admin"] = self.owner  # админка — только владельцу
                     status["p2p"] = self.owner and p2p is not None
+                    status["exchanges"] = self.owner and exchanges is not None
                     if self.owner and accounts is not None:
                         status["accounts"] = accounts.info()
                     return self._send(200, status)
@@ -161,7 +163,16 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                         return self._send(200, {"coin": coin, "rows": [], "error": "сравнение бирж выключено"})
                     if coin not in {*bot.watched_coins(), *bot.tradable_coins()}:
                         return self._send(400, {"error": "unknown coin"})
-                    return self._send(200, venues.prices(coin))
+                    out = venues.prices(coin)
+                    if self.owner and exchanges is not None:  # открыт ли ввод/вывод — по ключам владельца
+                        out = {**out, "transfer": exchanges.coin_status(coin)}
+                    return self._send(200, out)
+                if url.path == "/api/exchanges":
+                    if not self.owner:
+                        return self._send(403, {"error": "только для владельца"})
+                    if exchanges is None:
+                        return self._send(200, {"exchanges": [], "total": 0, "coins": []})
+                    return self._send(200, exchanges.view())
                 if url.path == "/api/p2p":
                     if not self.owner:
                         return self._send(403, {"error": "P2P — только для владельца"})
@@ -280,9 +291,9 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
 
 def serve(bot: Bot, token: str, port: int, tg_token: str = "", owner_id: str = "",
           web_dir: Path = WEB_DIR, users=None, telegram=None, accounts=None, p2p=None,
-          venues=None) -> ThreadingHTTPServer:
+          venues=None, exchanges=None) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(bot, token, tg_token, owner_id, web_dir, users,
-                                                                 telegram, accounts, p2p, venues))
+                                                                 telegram, accounts, p2p, venues, exchanges))
     threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
     log.info("HTTP на порту %s", port)
     return server

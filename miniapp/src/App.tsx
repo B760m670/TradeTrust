@@ -12,6 +12,7 @@ import { Assets } from "./screens/Assets";
 import { Home } from "./screens/Home";
 import { Markets } from "./screens/Markets";
 import { Overview } from "./screens/Overview";
+import { MyExchanges } from "./screens/MyExchanges";
 import { P2P } from "./screens/P2P";
 import { Settings } from "./screens/Settings";
 import { Trade } from "./screens/Trade";
@@ -21,7 +22,7 @@ import { useBot } from "./useBot";
 
 // Как у бирж: Главная · Рынки · Торговать · Активы. Бот и настройки — страницы поверх вкладок.
 export type Tab = "home" | "markets" | "trade" | "assets";
-type Page = "bot" | "bot-settings" | "settings" | "p2p";
+type Page = "bot" | "bot-settings" | "settings" | "p2p" | "exchanges";
 
 const TABS: { id: Tab; text: string; icon: ReactNode }[] = [
   { id: "home", text: "Главная", icon: <HomeIcon /> },
@@ -162,6 +163,8 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
       onSettings={() => openPage("bot-settings")} />;
   } else if (page === "bot-settings") {
     body = <Settings status={status} busy={busy} act={act} scope="bot" />;
+  } else if (page === "exchanges") {
+    body = <MyExchanges />;
   } else if (page === "p2p") {
     body = <P2P />;
   } else if (page === "settings") {
@@ -174,7 +177,8 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
     body = <Assets status={status} />;
   } else {
     body = <Home status={status} busy={busy} act={act} onOpenCoin={openCoin} onTab={openTab}
-      onBot={() => openPage("bot")} onSettings={() => openPage("settings")} onP2P={() => openPage("p2p")} />;
+      onBot={() => openPage("bot")} onSettings={() => openPage("settings")} onP2P={() => openPage("p2p")}
+      onExchanges={() => openPage("exchanges")} />;
   }
 
   if (ADMIN_PAGE) {
