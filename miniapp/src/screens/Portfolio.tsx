@@ -11,8 +11,8 @@ const REFRESH_MS = 30_000;
 
 // Цвета долей проверены на различимость (в т.ч. при дальтонизме) для обеих тем; «Другие» — серый.
 const SLICE_COLORS: Record<Theme, string[]> = {
-  dark: ["#ff7a1f", "#3987e5", "#8b7cff", "#2fb3a6", "#d55181"],
-  light: ["#d9480f", "#2a78d6", "#6c5cf0", "#1f9a8e", "#e87ba4"],
+  dark: ["#8b7cff", "#d95926", "#3987e5", "#c98500", "#d55181"],
+  light: ["#6c5cf0", "#eb6834", "#2a78d6", "#eda100", "#e87ba4"],
 };
 
 export function usePortfolio() {

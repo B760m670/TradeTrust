@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { AccountButton } from "./components/Account";
 import { BotState, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
 import { AlertIcon, CloseIcon, HomeIcon, TrendIcon, WalletIcon, CandleIcon } from "./components/icons";
-import { Empty, Skeleton, Toast } from "./components/ui";
+import { Empty, Logo, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
 import { useWide } from "./hooks";
 import { LiveContext, LiveFeed, TickersContext, feedUrl, useTickers } from "./live";
@@ -34,9 +34,6 @@ const tabsFor = (_status: Status | null) => TABS;
 // админка — только по кнопке «Админка» в Telegram у владельца: ?page=admin
 const ADMIN_PAGE = new URLSearchParams(window.location.search).get("page") === "admin";
 
-function Logo() {
-  return <span className="logo" aria-hidden="true">TT</span>;
-}
 
 function Sidebar({ tab, onTab, status, busy, act, inCoin }: {
   tab: Tab; onTab: (t: Tab) => void; status: Status | null; busy: boolean; act: Act; inCoin: boolean;

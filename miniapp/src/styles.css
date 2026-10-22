@@ -1,6 +1,6 @@
 /* TradeTrust — своя тема, тёмная и светлая (data-theme на <html>). Телефон: нижнее меню;
    от 900px (Telegram Desktop): боковая панель. */
-/* Вариант «Терминал»: плотно и строго, как у профессиональных бирж; оранжевый акцент, Manrope. */
+/* Вариант «Терминал»: плотно и строго, как у профессиональных бирж; фиолетовый акцент, Manrope. */
 :root {
   --bg: #08090c;
   --surface: #101218;
@@ -10,8 +10,8 @@
   --text: #eceff4;
   --muted: #8b92a5;
   --faint: #5a6173;
-  --accent: #ff7a1f;
-  --accent-soft: rgba(255, 122, 31, 0.14);
+  --accent: #8b7cff;
+  --accent-soft: rgba(139, 124, 255, 0.14);
   --up: #20d49a;
   --up-soft: rgba(32, 212, 154, 0.12);
   --down: #ff5470;
@@ -20,10 +20,10 @@
   --amber-soft: rgba(245, 180, 0, 0.14);
   --demo: #3b9eff;
   --demo-soft: rgba(59, 158, 255, 0.14);
-  --on-accent: #1a0c02;
+  --on-accent: #0b0a18;
   --on-color: #08090c;
-  --accent-hover: #ff8f45;
-  --accent-line: rgba(255, 122, 31, 0.45);
+  --accent-hover: #9c8fff;
+  --accent-line: rgba(139, 124, 255, 0.45);
   --inset: #171a22;
   --sidebar-bg: #0c0d11;
   --nav-bg: #101218;
@@ -46,8 +46,8 @@
   --text: #0d1016;
   --muted: #5b6272;
   --faint: #959caa;
-  --accent: #d9480f;
-  --accent-soft: rgba(217, 72, 15, 0.1);
+  --accent: #6c5cf0;
+  --accent-soft: rgba(108, 92, 240, 0.1);
   --up: #0a9a6a;
   --up-soft: rgba(10, 154, 106, 0.1);
   --down: #e33b55;
@@ -58,8 +58,8 @@
   --demo-soft: rgba(31, 111, 229, 0.1);
   --on-accent: #ffffff;
   --on-color: #ffffff;
-  --accent-hover: #c2410c;
-  --accent-line: rgba(217, 72, 15, 0.45);
+  --accent-hover: #5b4ae6;
+  --accent-line: rgba(108, 92, 240, 0.45);
   --inset: #f1f3f6;
   --sidebar-bg: #ffffff;
   --nav-bg: #ffffff;
@@ -106,7 +106,8 @@ h1, h2, h3, p { margin: 0; }
   font-size: 14px; color: var(--down); background: var(--down-soft); }
 
 .logo { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px;
-  border-radius: 50%; background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 14px; letter-spacing: 0.02em; }
+  border-radius: 50%; background: #ff7a1f; color: #1a0c02; font-weight: 800; font-size: 14px; letter-spacing: 0.02em; }
+.logo-photo { object-fit: cover; background: var(--surface-2); }
 
 /* боковая панель (широкий экран) */
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 28px; padding: 24px 16px;
@@ -381,8 +382,8 @@ button.card { text-align: left; width: 100%; }
 .theme-preview i:nth-child(1) { top: 12px; right: 40%; }
 .theme-preview i:nth-child(2) { top: 30px; }
 .theme-preview i:nth-child(3) { top: 46px; right: 60%; }
-.pv-dark { background: #07080d; } .pv-dark i { background: rgba(255, 255, 255, 0.12); } .pv-dark i:nth-child(1) { background: #ff7a1f; }
-.pv-light { background: #f3f3f7; } .pv-light i { background: rgba(17, 18, 28, 0.1); } .pv-light i:nth-child(1) { background: #d9480f; }
+.pv-dark { background: #07080d; } .pv-dark i { background: rgba(255, 255, 255, 0.12); } .pv-dark i:nth-child(1) { background: #8b7cff; }
+.pv-light { background: #f3f3f7; } .pv-light i { background: rgba(17, 18, 28, 0.1); } .pv-light i:nth-child(1) { background: #6c5cf0; }
 .pv-auto { background: linear-gradient(90deg, #f3f3f7 50%, #07080d 50%); }
 .pv-auto i { background: rgba(128, 128, 140, 0.35); } .pv-auto i:nth-child(1) { background: #7c6cf8; }
 .theme-option span { display: flex; align-items: center; justify-content: center; gap: 6px; }
