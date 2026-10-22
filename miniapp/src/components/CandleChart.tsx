@@ -91,9 +91,12 @@ function IndLegend({ title, lines, i, colors, digits, top }: {
 
 /** Свечной график, как на бирже: свечи или линия, индикаторы (основной поверх свечей и окна под графиком),
  *  вход и стоп бота, живая свеча, история назад. */
-export function CandleChart({ bars, interval, kind, main = null, subs = [], botEma = [20, 50], position, onNeedMore }: {
+/** Уровень на графике: ваш ордер на бирже (тейк-профит, стоп, лимитный). */
+export interface Level { price: number; title: string; tone: "up" | "down" | "text" }
+
+export function CandleChart({ bars, interval, kind, main = null, subs = [], botEma = [20, 50], position, levels, onNeedMore }: {
   bars: Bar[]; interval: Interval; kind: ChartKind; main?: MainInd | null; subs?: SubInd[]; botEma?: [number, number];
-  position: { entry: number; stop: number } | null; onNeedMore?: () => void;
+  position: { entry: number; stop: number } | null; levels?: Level[]; onNeedMore?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -225,7 +228,20 @@ export function CandleChart({ bars, interval, kind, main = null, subs = [], botE
       s.removePriceLine(stop);
       s.removePriceLine(entry);
     };
-  }, [position?.entry, position?.stop, interval, kind, theme]);
+  }, [position?.entry, position?.stop, interval, kind, theme, subKey]); // subKey: график пересоздаётся вместе с окнами индикаторов
+
+  // ваши ордера на бирже — пунктиром, с подписью на шкале, как у Bybit
+  const levelKey = (levels ?? []).map((l) => `${l.price}:${l.title}:${l.tone}`).join("|");
+  useEffect(() => {
+    const s = mainSeries.current;
+    if (!s || !levels?.length) return;
+    const lines = levels.map((l) => s.createPriceLine({ price: l.price, color: l.tone === "text" ? colors.text : colors[l.tone],
+      lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true, title: l.title }));
+    return () => {
+      if (mainSeries.current !== s) return;
+      lines.forEach((line) => s.removePriceLine(line));
+    };
+  }, [levelKey, interval, kind, theme, subKey]);
 
   const zoom = (factor: number) => {
     const t = chartRef.current?.timeScale();

@@ -3,10 +3,11 @@ import type { Status } from "../api";
 import { useLiveCandle } from "../live";
 import { utcOffsetLabel } from "../logic";
 import { haptic, prefs } from "../telegram";
-import { CandleChart, SecondChart, SUB_HEIGHT, useChartColors } from "./CandleChart";
+import { CandleChart, SecondChart, SUB_HEIGHT, useChartColors, type Level } from "./CandleChart";
 import { INTERVALS, STREAM_CODE, useCandles, withLive, type Interval } from "./candles";
 import { MAIN_INDS, MAX_SUBS, SUB_INDS, type MainInd, type SubInd } from "./indicators";
 import { useSecondLine } from "./seconds";
+import { chartPrice, pct } from "../format";
 import { Card, Empty, Skeleton } from "./ui";
 
 const ZONE = utcOffsetLabel(-new Date().getTimezoneOffset()); // часовой пояс телефона
@@ -38,8 +39,9 @@ function useSubs(): [SubInd[], (ind: SubInd) => void] {
 
 /** Один график, как на бирже: таймфреймы, свечи или линия, индикаторы, вход и стоп позиции бота.
  *  История — с сервера бота, текущая свеча — из потока Bybit, поэтому цена на графике совпадает с ценой в шапке. */
-export function ChartCard({ coin, status, title, aside, tall, className }: {
+export function ChartCard({ coin, status, title, aside, tall, className, levels }: {
   coin: string; status: Status; title?: ReactNode; aside?: ReactNode; tall?: boolean; className?: string;
+  levels?: Level[];
 }) {
   const [tf, setTf] = usePref<Tf>(TF_KEY, TFS.map(([k]) => k), "15m");
   const seconds = tf === "1s";
@@ -50,6 +52,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
   const live = useLiveCandle(coin, seconds ? "" : STREAM_CODE[interval]);
   const line = useSecondLine(seconds ? coin : "");
   const shown = useMemo(() => (bars ? withLive(bars, live, live?.volume) : null), [bars, live]);
+  const now = shown?.[shown.length - 1]?.close;
   const set = status.settings;
   const colors = useChartColors();
   const pos = status.positions.find((p) => p.coin === coin) ?? null;
@@ -61,7 +64,7 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
     body = line.length ? <SecondChart points={line} /> : <Skeleton height="100%" />;
   } else if (shown?.length) {
     body = <CandleChart bars={shown} interval={interval} kind="candles" main={mainInd === "none" ? null : mainInd} subs={subs}
-      botEma={botEma} position={position} onNeedMore={loadMore} />;
+      botEma={botEma} position={position} levels={levels} onNeedMore={loadMore} />;
   } else if (error) {
     body = <Empty title="График не загрузился">{error}</Empty>;
   } else {
@@ -92,9 +95,16 @@ export function ChartCard({ coin, status, title, aside, tall, className }: {
           ))}
         </div>
       )}
-      {(seconds || pos) && (
+      {(seconds || pos || levels?.length) && (
         <div className="legend">
           {pos && !seconds && <span><i className="dashed" style={{ borderColor: colors.down }} />стоп бота</span>}
+          {/* ваши ордера — и подписью: далёкий тейк-профит на шкалу может не попасть */}
+          {!seconds && levels?.map((l) => (
+            <span key={`${l.title}${l.price}`} className="num">
+              <i className="dashed" style={{ borderColor: l.tone === "text" ? colors.text : colors[l.tone] }} />
+              {l.title} {chartPrice(l.price)}{now ? ` · ${pct((l.price / now - 1) * 100, true)}` : ""}
+            </span>
+          ))}
           {seconds && <span className="legend-tf">каждая новая цена сделки Bybit — шаг линии · время {ZONE}</span>}
         </div>
       )}

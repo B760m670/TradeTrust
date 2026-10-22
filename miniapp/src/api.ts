@@ -204,6 +204,21 @@ export interface Portfolio {
   assets: Asset[];
   updated_at: number;
   bot: { capital: number; invested: number; free: number };
+  /** ордера, открытые на бирже: лимитные и условные (TP/SL); bot — стоп позиции бота */
+  open_orders?: OpenOrder[];
+}
+
+export interface OpenOrder {
+  id: string;
+  coin: string;
+  side: "buy" | "sell";
+  kind: "limit" | "tp" | "sl" | "stop";
+  type: "limit" | "market";
+  price: number | null;
+  trigger: number | null;
+  qty: number;
+  created: number;
+  bot: boolean;
 }
 
 export class ApiError extends Error {
