@@ -28,6 +28,10 @@ class Config:
     real_api_key: str = ""             # второй счёт владельца — реальный Bybit (mainnet), переключается в приложении
     real_api_secret: str = ""
     real_base_url: str = ""
+    p2p: bool = False                  # P2P Bybit владельца: стакан, спред, ордера, уведомления — только чтение
+    p2p_api_key: str = ""              # отдельный ключ с правами P2P; иначе ключ реального счёта
+    p2p_api_secret: str = ""
+    p2p_currencies: list[str] = field(default_factory=lambda: ["RUB", "USD"])
     futures: bool = False              # раздел «Фьючерсы» на том же счёте Bybit: лонг 1x, для копитрейдинга
     market: str = "spot"               # рынок этого бота: spot или linear (у раздела фьючерсов), из .env не задаётся
     mode: str = "confirm"              # signals — только сигналы, confirm — сделка после подтверждения, auto — сам
@@ -80,6 +84,10 @@ class Config:
             real_api_secret=_env("BYBIT_REAL_API_SECRET"),
             real_base_url=_env("BYBIT_REAL_BASE_URL"),
             futures=_env("BYBIT_FUTURES", "0").lower() in ("1", "true", "yes", "да"),
+            p2p=_env("BYBIT_P2P", "0").lower() in ("1", "true", "yes", "да"),
+            p2p_api_key=_env("BYBIT_P2P_API_KEY"),
+            p2p_api_secret=_env("BYBIT_P2P_API_SECRET"),
+            p2p_currencies=[c.strip().upper() for c in _env("P2P_CURRENCIES", "RUB,USD").split(",") if c.strip()],
             mode=_env("MODE", "confirm").lower(),
             coins=[c.strip().upper() for c in _env("COINS", ",".join(COINS)).split(",") if c.strip()],
             risk_pct=_float("RISK_PCT", 0.3),
@@ -118,6 +126,10 @@ class Config:
             raise ValueError(f"рынок: {' или '.join(MARKETS)}")
         if self.env == "paper" and (self.futures or self.market != "spot"):
             raise ValueError("Бумажный счёт торгует только спот — для фьючерсов нужен счёт Bybit (BYBIT_ENV=demo)")
+        if self.p2p and not (self.p2p_api_key or self.real_api_key or self.env == "mainnet"):
+            raise ValueError("Для P2P нужен ключ реального счёта (BYBIT_REAL_API_KEY) или BYBIT_P2P_API_KEY")
+        if bool(self.p2p_api_key) != bool(self.p2p_api_secret):
+            raise ValueError("Для P2P нужны оба: BYBIT_P2P_API_KEY и BYBIT_P2P_API_SECRET")
         if self.mode not in MODES:
             raise ValueError(f"MODE должен быть одним из {MODES}")
         if self.env != "paper" and not (self.api_key and self.api_secret):

@@ -112,10 +112,11 @@ class BybitClient:
         except Exception as exc:
             HEALTH.update(error_at=time.time(), error=f"{path}: {exc}"[:300])
             raise
-        if data.get("retCode") != 0:
+        code = data.get("retCode", data.get("ret_code"))  # P2P API отвечает в стиле ret_code/ret_msg
+        if code != 0:
             # ошибка в ответе (например, мало денег) — связь при этом есть
             HEALTH["ok_at"] = time.time()
-            raise BybitError(data.get("retCode"), data.get("retMsg", ""), path)
+            raise BybitError(code, data.get("retMsg", data.get("ret_msg", "")), path)
         HEALTH["ok_at"] = time.time()
         return data.get("result") or {}
 

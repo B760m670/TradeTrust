@@ -123,6 +123,8 @@ export interface Status {
   orders?: ManualOrder[];
   /** true — это владелец: ему видна админка */
   admin?: boolean;
+  /** P2P владельца подключён (BYBIT_P2P=1) — показываем раздел */
+  p2p?: boolean;
 }
 
 export interface AccountInfo {
@@ -221,6 +223,35 @@ export interface OpenOrder {
   bot: boolean;
 }
 
+export interface P2PAd {
+  id: string; nick: string; price: number; quantity: number; min_amount: number; max_amount: number;
+  payments: string[]; orders: number; rate: number; online: boolean; tags: string[];
+}
+export interface P2PPrefs { amount: number; payments: string[]; min_rate: number; min_orders: number; alert_pct: number }
+export interface P2POrder {
+  id: string; side: "buy" | "sell"; status: number; status_text: string; price: number; amount: number; qty: number;
+  currency: string; token: string; who: string; created: number; seconds_left: number;
+}
+export interface P2PStats {
+  buy_qty: number; buy_fiat: number; sell_qty: number; sell_fiat: number; orders: number;
+  buy_price: number | null; sell_price: number | null; profit: number;
+}
+export interface P2PView {
+  available: boolean;
+  currencies?: string[];
+  currency?: string;
+  error?: string;
+  account?: { nickName?: string; recentRate?: number; recentFinishCount?: number; totalFinishCount?: number;
+    averageReleaseTime?: number; recentTradeAmount?: number };
+  market?: {
+    currency: string; prefs: P2PPrefs; updated_at: number; bid: number | null; ask: number | null;
+    maker_pct: number | null; taker_pct: number | null; fee_pct: number; bids: P2PAd[]; asks: P2PAd[];
+    total: { bids: number; asks: number }; payments: { id: string; name: string; ads: number; mine: boolean }[];
+  };
+  pending?: P2POrder[];
+  stats?: Record<string, P2PStats>;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -269,6 +300,9 @@ export const api = {
   saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
   order: (coin: string, side: "buy" | "sell", usdt: number) => request<Message>("/api/order", "POST", { coin, side, usdt }),
   admin: () => request<AdminData>("/api/admin"),
+  p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
+  p2pPrefs: (currency: string, changes: Partial<P2PPrefs>) =>
+    request<{ message: string; prefs: P2PPrefs }>("/api/p2p/prefs", "POST", { currency, ...changes }),
   saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),
   userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>
     request<Message>(`/api/admin/users/${encodeURIComponent(id)}/${action}`, "POST", {}),

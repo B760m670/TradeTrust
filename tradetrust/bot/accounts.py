@@ -50,6 +50,7 @@ class Accounts:
         """real_error — почему реальный счёт задан в .env, но не подключился (ключ не прошёл проверку);
         futures — раздел «Фьючерсы» основного счёта."""
         self.main, self.real, self.real_error, self.futures = main, real, real_error, futures
+        self.p2p = None  # P2P владельца (P2PDesk), если включён — к счетам не относится
 
     def bots(self) -> dict[str, Bot]:
         return {"main": self.main, **({"futures": self.futures} if self.futures is not None else {}),

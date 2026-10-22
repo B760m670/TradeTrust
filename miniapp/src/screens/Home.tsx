@@ -23,10 +23,11 @@ interface Props {
   onTab: (tab: Tab) => void;
   onBot: () => void;
   onSettings: () => void;
+  onP2P?: () => void;
 }
 
 /** Главная, как у бирж: баланс всего счёта, торговые боты карточками, что ждёт решения, рынок за сутки. */
-export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSettings }: Props) {
+export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSettings, onP2P }: Props) {
   const { data } = usePortfolio();
   const tickers = useTickers(s.all_coins);
   const assets = data ? withLive(data.assets, tickers) : [];
@@ -142,6 +143,22 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
           <div className="positions">
             {s.positions.map((p, i) => <PositionCard key={p.coin} p={p} i={i} onOpen={() => onOpenCoin(p.coin)} />)}
           </div>
+        </>
+      )}
+
+      {s.p2p && onP2P && (
+        <>
+          <div className="sec-head"><h3 className="section-title">P2P</h3>
+            <button className="link-btn" onClick={onP2P}>Открыть <ChevronIcon size={14} /></button></div>
+          <Card className="bot-card">
+            <button className="bot-card-main" onClick={onP2P}>
+              <span className="row-main">
+                <strong>P2P · USDT</strong>
+                <span className="muted small">спред по вашим способам оплаты, ордера и уведомления — только просмотр</span>
+              </span>
+              <ChevronIcon size={18} />
+            </button>
+          </Card>
         </>
       )}
 
