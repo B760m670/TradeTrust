@@ -34,6 +34,8 @@ NO_ACCOUNT = "Чтобы открыть демо-счёт, нажмите /start
 
 
 
+PHOTO_CACHE = 3600  # фото профиля перезапрашиваем не чаще раза в час
+
 class Telegram:
     def __init__(self, token: str, chat_id: str, webapp_url: str = "", session: requests.Session | None = None):
         self.url = f"https://api.telegram.org/bot{token}"
@@ -46,6 +48,7 @@ class Telegram:
         self.offset = 0
         self.ok_at: float | None = None  # для админки: когда Telegram последний раз ответил
         self.error = ""
+        self._photos: dict[str, tuple[float, bytes | None]] = {}  # user_id → (когда, фото профиля)
 
     def _call(self, method: str, **params) -> dict:
         resp = self.http.post(f"{self.url}/{method}", json=params, timeout=60)
@@ -60,6 +63,25 @@ class Telegram:
         if buttons:
             params["reply_markup"] = {"inline_keyboard": [[self._button(t, d) for t, d in row] for row in buttons]}
         return self._call("sendMessage", **params)["message_id"]
+
+    def profile_photo(self, user_id: int | str) -> bytes | None:
+        """Текущее фото профиля пользователя (маленькое, ~160 px) через Bot API; None — фото нет или скрыто.
+        Ссылка photo_url из мини-приложения часто отдаёт заглушку с буквой, поэтому берём фото у Bot API."""
+        now = time.time()
+        hit = self._photos.get(str(user_id))
+        if hit and now - hit[0] < (PHOTO_CACHE if hit[1] else 300):  # нет фото — проверим снова через 5 мин
+            return hit[1]
+        photo = None
+        sets = self._call("getUserProfilePhotos", user_id=int(user_id), limit=1).get("photos") or []
+        if sets:
+            sizes = sorted(sets[0], key=lambda s: s.get("width", 0))
+            size = next((s for s in sizes if s.get("width", 0) >= 160), sizes[-1])
+            path = self._call("getFile", file_id=size["file_id"])["file_path"]
+            resp = self.http.get(self.url.replace("/bot", "/file/bot", 1) + "/" + path, timeout=30)
+            resp.raise_for_status()
+            photo = resp.content
+        self._photos[str(user_id)] = (now, photo)
+        return photo
 
     def send_document(self, filename: str, data: bytes, caption: str = "", chat_id: str | None = None) -> None:
         """Файл в чат (например, журнал P2P-сделок для учёта)."""

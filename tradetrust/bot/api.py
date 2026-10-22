@@ -132,6 +132,26 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 return self._send(404, {"error": "пользователь не найден"})
             return self._send(404, {"error": "not found"})
 
+        def _photo(self) -> None:
+            """Фото профиля Telegram того, кто открыл приложение — для аватарки в шапке."""
+            header = self.headers.get("Authorization", "")
+            user = webapp_auth.validate(header[4:], tg_token) if header.startswith("tma ") else None
+            if not user:
+                return self._send(401, {"error": "unauthorized"})
+            try:
+                photo = telegram.profile_photo(user["id"]) if telegram is not None else None
+            except Exception as exc:
+                log.warning("фото профиля: %s", exc)
+                photo = None
+            if not photo:
+                return self._send(404, {"error": "нет фото"})
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(photo)))
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(photo)
+
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
@@ -142,6 +162,8 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                 return self._send(200, {"ok": True})
             if not url.path.startswith("/api/"):
                 return self._static(url.path)
+            if url.path == "/api/photo":
+                return self._photo()
             bot = self._bot()
             if bot is None:
                 return

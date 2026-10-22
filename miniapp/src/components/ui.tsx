@@ -1,11 +1,11 @@
 // Свои компоненты интерфейса: карточки, плитки, кнопки, переключатель режимов, уведомления.
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from "react";
-import type { Position } from "../api";
+import { profilePhoto, type Position } from "../api";
 import { useAnimatedNumber } from "../hooks";
 import { useFeedLag } from "../live";
 import { price, usd, type Tone } from "../format";
 import { rangeMarks, type ChipTone } from "../logic";
-import { haptic, photoUrl } from "../telegram";
+import { haptic } from "../telegram";
 
 export function Chip({ tone, children }: { tone: ChipTone; children: ReactNode }) {
   return <span className={`chip chip-${tone}`}>{children}</span>;
@@ -194,12 +194,16 @@ export function LiveBadge({ on }: { on: boolean }) {
   );
 }
 
-/** Аватарка в шапке: фото профиля Telegram, а если его нет или не загрузилось — «TT» на оранжевом. */
+/** Аватарка в шапке: фото профиля Telegram, а если его нет или оно скрыто — «TT» на оранжевом. */
+let photoOnce: Promise<string | null> | null = null; // одно фото на всё приложение, не на каждый экран
 export function Logo() {
-  const [failed, setFailed] = useState(false);
-  const photo = photoUrl();
-  if (photo && !failed) {
-    return <img className="logo logo-photo" src={photo} alt="" aria-hidden="true" onError={() => setFailed(true)} />;
-  }
+  const [photo, setPhoto] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    photoOnce ??= profilePhoto().catch(() => null);
+    photoOnce.then((url) => alive && setPhoto(url));
+    return () => { alive = false; };
+  }, []);
+  if (photo) return <img className="logo logo-photo" src={photo} alt="" aria-hidden="true" onError={() => setPhoto(null)} />;
   return <span className="logo" aria-hidden="true">TT</span>;
 }
