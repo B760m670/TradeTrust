@@ -13,6 +13,7 @@ import json
 import logging
 import mimetypes
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -223,6 +224,16 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     if not self.owner:
                         return self._send(403, {"error": "только для владельца"})
                     return self._admin_post(parts[2:])
+                if parts == ["api", "p2p", "journal"]:
+                    if not self.owner or p2p is None:
+                        return self._send(403, {"error": "P2P — только для владельца"})
+                    if telegram is None:
+                        return self._send(400, {"error": "Telegram не подключён — некуда отправить файл"})
+                    data, count = p2p.journal()
+                    name = f"p2p-journal-{time.strftime('%Y-%m-%d')}.csv"
+                    telegram.send_document(name, data, f"🧾 Журнал P2P за полгода: {count} завершённых ордеров. "
+                                                       "Результат продаж — по FIFO, для учёта и 3-НДФЛ.")
+                    return self._send(200, {"message": f"Журнал отправлен в Telegram: {count} ордеров"})
                 if parts == ["api", "p2p", "prefs"]:
                     if not self.owner or p2p is None:
                         return self._send(403, {"error": "P2P — только для владельца"})

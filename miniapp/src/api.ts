@@ -229,7 +229,21 @@ export interface P2PAd {
   id: string; nick: string; price: number; quantity: number; min_amount: number; max_amount: number;
   payments: string[]; orders: number; rate: number; online: boolean; tags: string[];
 }
-export interface P2PPrefs { amount: number; payments: string[]; min_rate: number; min_orders: number; alert_pct: number }
+export interface P2PPrefs {
+  amount: number; payments: string[]; min_rate: number; min_orders: number; alert_pct: number;
+  /** расходы на круг, %: комиссия мейкера за объявление на покупку и на продажу, банк/сеть/прочее */
+  fee_buy_pct: number; fee_sell_pct: number; extra_pct: number;
+  /** лимиты по способу оплаты (id → день/месяц) и порог месячного оборота */
+  limits: Record<string, { day?: number; month?: number }>; month_cap: number;
+}
+export interface P2PCard {
+  pay: string; name: string; day_in: number; day_out: number; month_in: number; month_out: number; people: number;
+  limit: { day?: number; month?: number };
+}
+export interface P2PLedger {
+  currency: string; cards: P2PCard[]; turnover: number; month_cap: number; people_day: number; people_month: number;
+  warnings: { key: string; text: string }[]; month: string;
+}
 export interface P2POrder {
   id: string; side: "buy" | "sell"; status: number; status_text: string; price: number; amount: number; qty: number;
   currency: string; token: string; who: string; created: number; seconds_left: number;
@@ -247,11 +261,13 @@ export interface P2PView {
     averageReleaseTime?: number; recentTradeAmount?: number };
   market?: {
     currency: string; prefs: P2PPrefs; updated_at: number; bid: number | null; ask: number | null;
-    maker_pct: number | null; taker_pct: number | null; fee_pct: number; bids: P2PAd[]; asks: P2PAd[];
+    gross_pct: number | null; costs_pct: number; ad_fee_pct: number;
+    maker_pct: number | null; taker_pct: number | null; bids: P2PAd[]; asks: P2PAd[];
     total: { bids: number; asks: number }; payments: { id: string; name: string; ads: number; mine: boolean }[];
   };
   pending?: P2POrder[];
   stats?: Record<string, P2PStats>;
+  ledger?: P2PLedger;
 }
 
 export interface VenueRow {
@@ -329,6 +345,7 @@ export const api = {
   p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
   p2pPrefs: (currency: string, changes: Partial<P2PPrefs>) =>
     request<{ message: string; prefs: P2PPrefs }>("/api/p2p/prefs", "POST", { currency, ...changes }),
+  p2pJournal: () => request<{ message: string }>("/api/p2p/journal", "POST", {}),
   saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),
   userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>
     request<Message>(`/api/admin/users/${encodeURIComponent(id)}/${action}`, "POST", {}),
