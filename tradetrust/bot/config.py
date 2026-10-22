@@ -32,6 +32,15 @@ class Config:
     p2p_api_key: str = ""              # отдельный ключ с правами P2P; иначе ключ реального счёта
     p2p_api_secret: str = ""
     p2p_currencies: list[str] = field(default_factory=lambda: ["RUB", "USD"])
+    binance_api_key: str = ""          # «Мои биржи»: ключи только для чтения (с правом торговли/вывода не принимаются)
+    binance_api_secret: str = ""
+    okx_api_key: str = ""
+    okx_api_secret: str = ""
+    okx_passphrase: str = ""
+    kucoin_api_key: str = ""
+    kucoin_api_secret: str = ""
+    kucoin_passphrase: str = ""
+    kucoin_key_version: str = "3"
     coingecko_api_key: str = ""        # бесплатный demo-ключ CoinGecko — выше лимиты для «Цены на биржах»
     futures: bool = False              # раздел «Фьючерсы» на том же счёте Bybit: лонг 1x, для копитрейдинга
     market: str = "spot"               # рынок этого бота: spot или linear (у раздела фьючерсов), из .env не задаётся
@@ -86,6 +95,10 @@ class Config:
             real_base_url=_env("BYBIT_REAL_BASE_URL"),
             futures=_env("BYBIT_FUTURES", "0").lower() in ("1", "true", "yes", "да"),
             coingecko_api_key=_env("COINGECKO_API_KEY"),
+            binance_api_key=_env("BINANCE_API_KEY"), binance_api_secret=_env("BINANCE_API_SECRET"),
+            okx_api_key=_env("OKX_API_KEY"), okx_api_secret=_env("OKX_API_SECRET"), okx_passphrase=_env("OKX_PASSPHRASE"),
+            kucoin_api_key=_env("KUCOIN_API_KEY"), kucoin_api_secret=_env("KUCOIN_API_SECRET"),
+            kucoin_passphrase=_env("KUCOIN_PASSPHRASE"), kucoin_key_version=_env("KUCOIN_API_KEY_VERSION", "3"),
             p2p=_env("BYBIT_P2P", "0").lower() in ("1", "true", "yes", "да"),
             p2p_api_key=_env("BYBIT_P2P_API_KEY"),
             p2p_api_secret=_env("BYBIT_P2P_API_SECRET"),
@@ -130,6 +143,12 @@ class Config:
             raise ValueError("Бумажный счёт торгует только спот — для фьючерсов нужен счёт Bybit (BYBIT_ENV=demo)")
         if self.p2p and not (self.p2p_api_key or self.real_api_key or self.env == "mainnet"):
             raise ValueError("Для P2P нужен ключ реального счёта (BYBIT_REAL_API_KEY) или BYBIT_P2P_API_KEY")
+        for name, parts in (("BINANCE", (self.binance_api_key, self.binance_api_secret)),
+                            ("OKX", (self.okx_api_key, self.okx_api_secret, self.okx_passphrase)),
+                            ("KUCOIN", (self.kucoin_api_key, self.kucoin_api_secret, self.kucoin_passphrase))):
+            if any(parts) and not all(parts):
+                need = "ключ, секрет и пароль ключа (PASSPHRASE)" if len(parts) == 3 else "ключ и секрет"
+                raise ValueError(f"Для {name} нужны {need}")
         if bool(self.p2p_api_key) != bool(self.p2p_api_secret):
             raise ValueError("Для P2P нужны оба: BYBIT_P2P_API_KEY и BYBIT_P2P_API_SECRET")
         if self.mode not in MODES:

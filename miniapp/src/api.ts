@@ -125,6 +125,8 @@ export interface Status {
   admin?: boolean;
   /** P2P владельца подключён (BYBIT_P2P=1) — показываем раздел */
   p2p?: boolean;
+  /** «Мои биржи» подключены (ключи только для чтения на сервере) */
+  exchanges?: boolean;
 }
 
 export interface AccountInfo {
@@ -259,6 +261,19 @@ export interface VenueRow {
 export interface VenuePrices {
   coin: string; rows: VenueRow[]; median?: number | null; range_pct?: number | null; missing?: string[];
   updated_at?: number; source?: string; error?: string;
+  /** биржа → открыт ли ввод/вывод монеты (по ключам владельца) */
+  transfer?: Record<string, { deposit: boolean; withdraw: boolean }>;
+}
+
+export interface MyExchange {
+  name: string; connected: boolean; error: string; warnings: string[];
+  assets?: { coin: string; qty: number; price: number | null; value: number | null }[];
+  total?: number; updated_at?: number;
+}
+export interface MyExchanges {
+  exchanges: MyExchange[]; total: number;
+  coins: { coin: string; qty: number; value: number; where: Record<string, number>;
+    closed: Record<string, { deposit: boolean; withdraw: boolean }> }[];
 }
 
 export class ApiError extends Error {
@@ -309,6 +324,7 @@ export const api = {
   saveSettings: (changes: Partial<EditableSettings>) => request<Message>("/api/settings", "POST", changes),
   order: (coin: string, side: "buy" | "sell", usdt: number) => request<Message>("/api/order", "POST", { coin, side, usdt }),
   admin: () => request<AdminData>("/api/admin"),
+  exchanges: () => request<MyExchanges>("/api/exchanges"),
   venues: (coin: string) => request<VenuePrices>(`/api/venues?coin=${coin}`),
   p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
   p2pPrefs: (currency: string, changes: Partial<P2PPrefs>) =>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from .bybit import BybitClient, BybitExchange, LinearExchange
 from .config import Config
 from .engine import Bot, next_bar_close
 from .p2p import P2PClient, P2PDesk
+from .myexchanges import from_config as my_exchanges
 from .venues import Venues
 from .paper import PaperExchange
 from .store import Store
@@ -107,6 +109,12 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
         futures.market = market
     accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures)
     accounts.p2p = connect_p2p(cfg, notifier, store)
+    # «Мои биржи»: Bybit — ключ реального счёта, остальные — ключи только для чтения из .env
+    accounts.exchanges = my_exchanges(cfg, accounts.real.ex.c if accounts.real else None)
+    if accounts.exchanges:
+        lines = accounts.exchanges.connect()
+        threading.Thread(target=accounts.exchanges.refresh, kwargs={"force": True}, daemon=True).start()
+        bot.notify("🏦 Мои биржи:\n" + "\n".join(lines))
     users = None
     if notifier:
         # демо-счета: цены основного рынка Bybit, общие для всех и из кэша. Регистрацию новых
@@ -125,7 +133,8 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
         notifier.start(bot, users, accounts)
     # HTTP нужен и мини-приложению (вход по подписи Telegram), и Android-приложению (по API_TOKEN)
     api.serve(bot, cfg.api_token, cfg.api_port, cfg.telegram_token, cfg.telegram_chat_id, users=users,
-              telegram=notifier, accounts=accounts, p2p=accounts.p2p, venues=Venues(cfg.coingecko_api_key))
+              telegram=notifier, accounts=accounts, p2p=accounts.p2p, venues=Venues(cfg.coingecko_api_key),
+              exchanges=accounts.exchanges)
     return accounts, users
 
 
@@ -211,6 +220,11 @@ def main() -> None:
                 done = errors.run(b, b.on_candle_close) and done
             errors.run(b, b.maybe_daily_report)
         poll_p2p()
+        if accounts.exchanges:
+            try:
+                accounts.exchanges.refresh()
+            except Exception:
+                log.exception("мои биржи")
         if users is not None:
             blocked = users.blocked()
             tick([b for b in users.all() if b.cfg.telegram_chat_id not in blocked], closed)

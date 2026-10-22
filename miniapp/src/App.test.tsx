@@ -98,7 +98,11 @@ beforeEach(() => {
     const body = url === "/api/status" ? status
       : url === "/api/portfolio" ? PORTFOLIO
       : url === "/api/admin" ? ADMIN
-      : url.startsWith("/api/venues") ? { coin: "SOL", range_pct: 0.05, missing: ["KuCoin"], rows: [
+      : url === "/api/exchanges" ? { total: 12450, exchanges: [
+        { name: "Bybit", connected: true, error: "", warnings: [], total: 10169, updated_at: 1700000000, assets: [{ coin: "ETH", qty: 4.1, price: 2480, value: 10168 }] },
+        { name: "OKX", connected: false, error: "у ключа OKX есть право торговли (trade) — для этого раздела нужен ключ только для чтения", warnings: [] }],
+        coins: [{ coin: "NIGHT", qty: 1000, value: 40, where: { OKX: 1000 }, closed: { OKX: { deposit: true, withdraw: false } } }] }
+      : url.startsWith("/api/venues") ? { coin: "SOL", range_pct: 0.05, missing: ["KuCoin"], transfer: { Bybit: { deposit: true, withdraw: false } }, rows: [
         { exchange: "bybit_spot", name: "Bybit", price: 100.02, spread_pct: 0.01, volume_usd: 2e8, stale: false, anomaly: false, thin: false, url: "https://www.bybit.com/trade/spot/SOL/USDT", diff_pct: 0.02 },
         { exchange: "okex", name: "OKX", price: 99.9, spread_pct: 0.01, volume_usd: 9e7, stale: true, anomaly: false, thin: false, url: null, diff_pct: null }] }
       : url.startsWith("/api/p2p?") || url === "/api/p2p" ? P2P_VIEW
@@ -223,8 +227,21 @@ describe("mini app", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Биржи" }));
     expect(await screen.findByRole("link", { name: "Bybit" })).toBeTruthy();
     expect(screen.getByText("данные устарели")).toBeTruthy();
+    expect(screen.getByText("вывод закрыт")).toBeTruthy(); // по ключам владельца: на Bybit вывод SOL закрыт
     expect(screen.getByText(/нет пары на: KuCoin/)).toBeTruthy();
     expect(calls.some((c) => c.url === "/api/venues?coin=SOL")).toBe(true);
+  });
+
+  it("shows the owner's exchanges with rejected keys and closed withdrawals", async () => {
+    Object.assign(status, { exchanges: true });
+    try {
+      await renderApp();
+      fireEvent.click(await screen.findByRole("button", { name: /Bybit · Binance · OKX · KuCoin/ }));
+      expect(await screen.findByText(/право торговли \(trade\)/)).toBeTruthy();
+      expect(screen.getByText("OKX: вывод закрыт")).toBeTruthy();
+    } finally {
+      Object.assign(status, { exchanges: undefined });
+    }
   });
 
   it("buys by hand on the trade screen", async () => {

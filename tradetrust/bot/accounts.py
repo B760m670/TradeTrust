@@ -51,6 +51,7 @@ class Accounts:
         futures — раздел «Фьючерсы» основного счёта."""
         self.main, self.real, self.real_error, self.futures = main, real, real_error, futures
         self.p2p = None  # P2P владельца (P2PDesk), если включён — к счетам не относится
+        self.exchanges = None  # «Мои биржи» (MyExchanges): балансы на всех биржах владельца, только чтение
 
     def bots(self) -> dict[str, Bot]:
         return {"main": self.main, **({"futures": self.futures} if self.futures is not None else {}),

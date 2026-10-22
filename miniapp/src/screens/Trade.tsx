@@ -206,7 +206,10 @@ function VenuePanel({ coin }: { coin: string }) {
         <>
           <div className="list">
             {data.rows.map((r) => {
-              const flag = r.stale ? "данные устарели" : r.anomaly ? "аномальная цена" : r.thin ? "маленький оборот" : null;
+              const st = data.transfer?.[r.name];
+              const closed = st && !(st.deposit && st.withdraw)
+                ? (!st.deposit && !st.withdraw ? "ввод и вывод закрыты" : !st.withdraw ? "вывод закрыт" : "ввод закрыт") : null;
+              const flag = closed ?? (r.stale ? "данные устарели" : r.anomaly ? "аномальная цена" : r.thin ? "маленький оборот" : null);
               return (
                 <div key={r.exchange} className="list-row venue-row">
                   <div className="row-main">
