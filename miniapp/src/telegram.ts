@@ -4,7 +4,6 @@ type Impact = "light" | "medium" | "heavy" | "rigid" | "soft";
 
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe?: { user?: { photo_url?: string } };
   colorScheme: "light" | "dark";
   platform: string;
   ready(): void;
@@ -35,11 +34,6 @@ declare global {
 }
 
 export const tg: TelegramWebApp | undefined = window.Telegram?.WebApp;
-
-/** Фото профиля Telegram (если пользователь его не скрыл) — для аватарки в шапке. */
-export function photoUrl(): string {
-  return tg?.initDataUnsafe?.user?.photo_url ?? "";
-}
 
 export function initData(): string {
   return tg?.initData ?? "";

@@ -323,6 +323,14 @@ async function request<T>(path: string, method: "GET" | "POST" = "GET", body?: u
   return data as T;
 }
 
+/** Фото профиля Telegram (картинка через сервер бота); null — фото нет или скрыто настройками. */
+export async function profilePhoto(): Promise<string | null> {
+  if (!initData()) return null; // открыто не из Telegram
+  const res = await fetch("/api/photo", { headers: { Authorization: `tma ${initData()}` } });
+  if (!res.ok) return null;
+  return URL.createObjectURL(await res.blob());
+}
+
 type Message = { message: string };
 
 export const api = {
