@@ -102,6 +102,8 @@ export interface Status {
   account?: "owner" | "real" | "demo";
   /** бот торгует на этом счёте; выключенный только доводит открытые позиции */
   enabled?: boolean;
+  /** ключ счёта только для чтения: баланс и ордера видны, сделок и бота нет */
+  read_only?: boolean;
   /** счета владельца и какой открыт — только владельцу */
   accounts?: Accounts;
   mode: Mode;
@@ -144,6 +146,8 @@ export interface Accounts {
   /** ключ реального счёта задан в .env (даже если не подключился) */
   real_configured: boolean;
   real_error: string;
+  /** демо скрыто: подключён реальный счёт, в приложении только он и P2P (вернуть — OWNER_DEMO=1) */
+  demo_hidden?: boolean;
 }
 
 /** Итог последней проверки рынка (после закрытия 4ч свечи). */
@@ -247,7 +251,19 @@ export interface P2PLedger {
 export interface P2POrder {
   id: string; side: "buy" | "sell"; status: number; status_text: string; price: number; amount: number; qty: number;
   currency: string; token: string; who: string; created: number; seconds_left: number;
+  buyer_name?: string; seller_name?: string;
 }
+/** Ваше объявление P2P и его место в выдаче (rank — среди всех, rank_pay — среди тех же способов оплаты). */
+export interface P2PMyAd {
+  id: string; side: "buy" | "sell"; token: string; currency: string; price: number; left: number; total: number;
+  done: number; min_amount: number; max_amount: number; payments: string[]; online: boolean; status_text: string;
+  fee_pct: number; rank?: number; rank_pay?: number; best_rival?: number | null;
+}
+export interface P2PLevel {
+  counterparties: number; volume_30d: number; next: string | null;
+  levels: { name: string; people: number; volume: number; perks: string; done: boolean }[];
+}
+export type P2PNotify = "important" | "all";
 export interface P2PStats {
   buy_qty: number; buy_fiat: number; sell_qty: number; sell_fiat: number; orders: number;
   buy_price: number | null; sell_price: number | null; profit: number;
@@ -259,14 +275,20 @@ export interface P2PView {
   currency?: string;
   error?: string;
   account?: { nickName?: string; recentRate?: number; recentFinishCount?: number; totalFinishCount?: number;
-    averageReleaseTime?: number; recentTradeAmount?: number };
+    averageReleaseTime?: number | string; averageTransferTime?: number | string; recentTradeAmount?: number | string;
+    goodAppraiseRate?: number | string; isOnline?: boolean };
   market?: {
     currency: string; prefs: P2PPrefs; updated_at: number; bid: number | null; ask: number | null;
     gross_pct: number | null; costs_pct: number; ad_fee_pct: number;
     maker_pct: number | null; taker_pct: number | null; bids: P2PAd[]; asks: P2PAd[];
+    /** покупают дороже, чем продают — разные способы оплаты или лимиты, а не прибыль */
+    crossed?: boolean;
     total: { bids: number; asks: number }; payments: { id: string; name: string; ads: number; mine: boolean }[];
   };
   pending?: P2POrder[];
+  my_ads?: P2PMyAd[];
+  level?: P2PLevel;
+  notify?: P2PNotify;
   stats?: Record<string, P2PStats>;
   ledger?: P2PLedger;
 }
@@ -352,7 +374,7 @@ export const api = {
   exchanges: () => request<MyExchanges>("/api/exchanges"),
   venues: (coin: string) => request<VenuePrices>(`/api/venues?coin=${coin}`),
   p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
-  p2pPrefs: (currency: string, changes: Partial<P2PPrefs>) =>
+  p2pPrefs: (currency: string, changes: Partial<P2PPrefs> & { notify?: P2PNotify }) =>
     request<{ message: string; prefs: P2PPrefs }>("/api/p2p/prefs", "POST", { currency, ...changes }),
   p2pJournal: () => request<{ message: string }>("/api/p2p/journal", "POST", {}),
   saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),

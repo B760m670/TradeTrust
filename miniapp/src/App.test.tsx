@@ -28,6 +28,13 @@ const P2P_VIEW = {
     fee_buy_pct: 0.3, fee_sell_pct: 0, extra_pct: 0, limits: {}, month_cap: 3500000 },
     updated_at: 1, bid: 81.9, ask: 82.6, gross_pct: 0.85, costs_pct: 0.3, ad_fee_pct: 0, maker_pct: 0.55, taker_pct: -0.85, bids: [{ ...P2P_AD, id: "b1", price: 81.9 }],
     asks: [P2P_AD], total: { bids: 4, asks: 4 }, payments: [{ id: "75", name: "Tinkoff", ads: 7, mine: true }, { id: "14", name: "способ #14", ads: 2, mine: false }] },
+  my_ads: [{ id: "m1", side: "sell", token: "USDT", currency: "RUB", price: 82.9, left: 900, total: 995, done: 95,
+    min_amount: 5000, max_amount: 30000, payments: ["Tinkoff"], online: true, status_text: "в сети", fee_pct: 0.3,
+    rank: 3, rank_pay: 1, best_rival: 82.95 }],
+  level: { counterparties: 4, volume_30d: 450, next: "Регулярный", levels: [
+    { name: "Регулярный", people: 5, volume: 2000, perks: "покупка и продажа", done: false },
+    { name: "Опытный", people: 5, volume: 10000, perks: "до 50 000 USDT", done: false }] },
+  notify: "important",
   pending: [{ id: "o1", side: "sell", status: 20, status_text: "оплачен — ждём, пока продавец отпустит монеты", price: 82.4,
     amount: 8240, qty: 100, currency: "RUB", token: "USDT", who: "Ivan", created: 1700000000000, seconds_left: 0 }],
   stats: {},
@@ -215,16 +222,38 @@ describe("mini app", () => {
     try {
       await renderApp();
       fireEvent.click(await screen.findByRole("button", { name: /P2P · USDT/ }));
-      expect(await screen.findByText("Спред сейчас")).toBeTruthy();
+      expect(await screen.findByText("Стакан сейчас")).toBeTruthy();
       expect(screen.getByText("+0,55%")).toBeTruthy(); // чистыми: 0,85% до расходов минус 0,3% комиссии мейкера
-      expect(screen.getByText(/Оборот за месяц 2 900 000 из 3 500 000/)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Прислать журнал сделок в Telegram" }));
-      expect(await screen.findByText("Журнал отправлен в Telegram: 41 ордеров")).toBeTruthy();
-      expect(screen.getByText(/проверьте поступление в банке/)).toBeTruthy();
+      expect(screen.getByText(/До уровня/)).toBeTruthy(); // прогресс до «Регулярного»: 4 из 5 контрагентов
+      expect(screen.getByText(/Покупатель отметил оплату/)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "способ #14" }));
       await waitFor(() => expect(calls.find((c) => c.url === "/api/p2p/prefs")?.body).toEqual({ currency: "RUB", payments: ["75", "14"] }));
+      fireEvent.click(screen.getByRole("tab", { name: /Мои/ }));
+      expect(await screen.findByText("Мои объявления")).toBeTruthy();
+      expect(screen.getByText(/по банкам/)).toBeTruthy(); // #3 среди всех, #1 среди тех же банков
+      expect(screen.getByText(/Отпускайте USDT, только когда деньги видны в банке/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("radio", { name: "Все" }));
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/p2p/prefs" && (c.body as { notify?: string }).notify === "all")).toBe(true));
+      fireEvent.click(screen.getByRole("tab", { name: "Карты" }));
+      expect(await screen.findByText(/Оборот за месяц 2 900 000 из 3 500 000/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Прислать журнал сделок в Telegram" }));
+      expect(await screen.findByText("Журнал отправлен в Telegram: 41 ордеров")).toBeTruthy();
     } finally {
       Object.assign(status, { p2p: undefined });
+    }
+  });
+
+  it("read-only real account: no trade buttons and bot card, P2P up front", async () => {
+    Object.assign(status, { p2p: true, read_only: true });
+    try {
+      await renderApp();
+      expect(await screen.findByText(/P2P · USDT/)).toBeTruthy();
+      expect(screen.queryByText("Торговые боты")).toBeNull();
+      const quick = document.querySelector(".quick")!;
+      expect(quick.textContent).toContain("P2P");
+      expect(quick.textContent).not.toContain("Купить");
+    } finally {
+      Object.assign(status, { p2p: undefined, read_only: undefined });
     }
   });
 

@@ -32,6 +32,14 @@ CACHE_SECONDS = 20       # стакан не чаще раза в 20 секун�
 ALERT_EVERY = 300        # проверка спреда для уведомления — раз в 5 минут
 ALERT_COOLDOWN = 2 * 3600
 PAY_WARN_SECONDS = 300   # «осталось 5 минут оплатить»
+RELEASE_REMIND = 600     # покупатель отметил оплату, а монеты не отпущены 10 минут — напомнить
+LEVEL_CACHE = 600        # прогресс уровня мейкера — раз в 10 минут (история ордеров — тяжёлый запрос)
+# уровни мейкера Bybit: уникальные контрагенты за всё время и объём за 30 дней (USDT) — как на экране «Уровни»
+LEVELS = [("Регулярный", 5, 2000.0, "объявления на покупку и продажу, до 20 000 USDT, по 2 объявления"),
+          ("Опытный", 5, 10000.0, "до 50 000 USDT на объявление, по 3 объявления")]
+# уведомления по ордерам: important — только то, чего нет в приложении Bybit (апелляция, напоминания);
+# all — ещё и каждый новый ордер и смена статуса
+NOTIFY_MODES = ("important", "all")
 DEFAULT_PREFS = {"amount": 0.0, "payments": [], "min_rate": 90, "min_orders": 20, "alert_pct": 0.0,
                  # расходы на круг, % от суммы: комиссия мейкера за объявление на покупку (у Bybit по RUB ~0,25–0,3%
                  # с 19.01.2026 — сверьте в кабинете), за объявление на продажу, банк/сеть/прочее
@@ -95,10 +103,12 @@ def spread(bid: float | None, ask: float | None, fee_buy: float = 0.0, fee_sell:
     taker — сразу по чужим объявлениям: купить у продавца и продать покупателю (обычно в минусе)."""
     costs = fee_buy + fee_sell + extra
     if not bid or not ask:
-        return {"bid": bid, "ask": ask, "gross_pct": None, "maker_pct": None, "taker_pct": None, "costs_pct": costs}
+        return {"bid": bid, "ask": ask, "gross_pct": None, "maker_pct": None, "taker_pct": None, "costs_pct": costs,
+                "crossed": False}
     gross = (ask / bid - 1) * 100
+    # перекрытый стакан: покупают дороже, чем продают — почти всегда разные способы оплаты или лимиты, а не прибыль
     return {"bid": bid, "ask": ask, "gross_pct": gross, "costs_pct": costs, "maker_pct": gross - costs,
-            "taker_pct": (bid / ask - 1) * 100}
+            "taker_pct": (bid / ask - 1) * 100, "crossed": bid > ask}
 
 
 class P2PClient:
@@ -154,6 +164,46 @@ def order_view(o: dict) -> dict:
         "created": int(_num(o.get("createDate"))), "seconds_left": int(_num(o.get("transferLastSeconds"))),
         "who_id": str(o.get("targetUserId", "")),
     }
+
+
+def my_ad_view(item: dict, names: dict[str, str]) -> dict:
+    """Ваше объявление: сторона, цена, сколько осталось, лимиты, способы оплаты, статус."""
+    terms = item.get("paymentTerms") or []
+    pays = [str(t.get("paymentType")) for t in terms if t.get("paymentType") is not None] or \
+        [str(x) for x in item.get("payments") or []]
+    status = int(_num(item.get("status")))
+    return {
+        "id": str(item.get("id", "")), "side": "buy" if str(item.get("side")) == "0" else "sell",
+        "token": item.get("tokenId", TOKEN), "currency": item.get("currencyId", ""), "price": _num(item.get("price")),
+        "left": _num(item.get("lastQuantity")), "total": _num(item.get("quantity")),
+        "done": _num(item.get("executedQuantity")), "min_amount": _num(item.get("minAmount")),
+        "max_amount": _num(item.get("maxAmount")), "payments": [names.get(x, f"способ #{x}") for x in pays],
+        "pay_ids": pays, "online": status == 10, "status": status,
+        "status_text": {10: "в сети", 20: "снято с публикации", 30: "завершено"}.get(status, str(status)),
+        "fee_pct": (lambda r: r * 100 if 0 < r < 0.05 else r)(_num(item.get("feeRate"))),
+        "remark": item.get("remark", ""),
+    }
+
+
+def rank(price: float, side: str, ads: list[Ad], pays: list[str] | None = None, skip: str = "") -> int:
+    """Место объявления в выдаче Bybit: продаёте — выше вас те, кто дешевле; покупаете — кто дороже.
+    pays — считать только конкурентов с теми же способами оплаты."""
+    rivals = [a for a in ads if a.id != skip and a.online and (not pays or set(pays) & set(a.payments))]
+    better = [a for a in rivals if (a.price < price if side == "sell" else a.price > price)]
+    return len(better) + 1
+
+
+def level_progress(orders: list[dict], now: float | None = None) -> dict:
+    """Прогресс уровня мейкера по завершённым ордерам: уникальные контрагенты (за доступную историю) и объём
+    за 30 дней в USDT. Bybit считает сам и может расходиться на 1–2 сделки — это ориентир."""
+    now = now or time.time()
+    done = [o for o in map(order_view, orders) if o["status"] == 50]
+    people = {o["who_id"] or o["who"] for o in done if o["who_id"] or o["who"]}
+    volume = sum(o["qty"] for o in done if o["created"] >= (now - 30 * 86400) * 1000)
+    levels = [{"name": name, "people": need_p, "volume": need_v, "perks": perks,
+               "done": len(people) >= need_p and volume >= need_v} for name, need_p, need_v, perks in LEVELS]
+    nxt = next((lv for lv in levels if not lv["done"]), None)
+    return {"counterparties": len(people), "volume_30d": volume, "levels": levels, "next": nxt["name"] if nxt else None}
 
 
 def fifo_journal(orders: list[dict]) -> list[dict]:
@@ -223,6 +273,8 @@ class P2PDesk:
         self.error = ""
         self._cache: dict[str, tuple[float, dict]] = {}
         self._names: dict[str, str] | None = None
+        self._raw: dict[str, tuple[list[Ad], list[Ad]]] = {}  # все объявления (без фильтров) — для места в выдаче
+        self._level: tuple[float, dict] | None = None
         self._last_alert_check = 0.0
         self.lock = threading.Lock()
 
@@ -234,7 +286,16 @@ class P2PDesk:
             prefs["payments"] = [p for p in self.payment_names() if p not in ("377",)]
         return prefs
 
+    @property
+    def notify_mode(self) -> str:
+        mode = self.store.get("p2p_notify")
+        return mode if mode in NOTIFY_MODES else "important"
+
     def set_prefs(self, currency: str, changes: dict) -> dict:
+        if "notify" in changes:
+            if changes["notify"] not in NOTIFY_MODES:
+                raise ValueError(f"notify: {' или '.join(NOTIFY_MODES)}")
+            self.store.set("p2p_notify", changes["notify"])
         if currency not in self.currencies:
             raise ValueError(f"валюта: {', '.join(self.currencies)}")
         prefs = self.prefs(currency)
@@ -287,6 +348,7 @@ class P2PDesk:
         buyers, sellers = self.p2p.online_ads(currency, "0"), self.p2p.online_ads(currency, "1")
         pick = lambda ads: [a for a in ads if fits(a, prefs["amount"], prefs["payments"],  # noqa: E731
                                                    prefs["min_rate"], prefs["min_orders"])]
+        self._raw[currency] = (buyers, sellers)
         bids = sorted(pick(buyers), key=lambda a: -a.price)
         asks = sorted(pick(sellers), key=lambda a: a.price)
         seen: dict[str, int] = {}
@@ -335,17 +397,29 @@ class P2PDesk:
         first_run = saved is None  # при первом запуске старые ордера не объявляем
         seen: dict = saved or {}
         current = {}
+        everything = self.notify_mode == "all"
+        paid_at: dict = self.store.get("p2p_paid_at") or {}
         for o in map(order_view, self.p2p.pending_orders()):
             current[o["id"]] = o["status"]
             before = seen.get(o["id"])
-            if not first_run and before != o["status"]:
+            if not first_run and before != o["status"] and (everything or o["status"] == 30):
                 self.notify(self._order_text(o, new=before is None))
+            if o["status"] == 20 and o["side"] == "sell":  # ждут, пока вы отпустите монеты
+                since = paid_at.setdefault(o["id"], time.time())
+                reminded = self.store.get("p2p_reminded") or []
+                if time.time() - since >= RELEASE_REMIND and o["id"] not in reminded:
+                    name = f" ({o['buyer_name']})" if o["buyer_name"] else ""
+                    self.notify(f"⏳ {self._head(o)}: покупатель{name} отметил оплату {int((time.time() - since) // 60)} "
+                                "мин назад. Проверьте банк: деньги пришли от него — отпустите USDT; не пришли или "
+                                "от другого человека — не отпускайте, напишите в чат ордера.")
+                    self.store.set("p2p_reminded", (reminded + [o["id"]])[-50:])
             if o["status"] == 10 and o["side"] == "buy" and 0 < o["seconds_left"] <= PAY_WARN_SECONDS:
                 warned = self.store.get("p2p_warned") or []
                 if o["id"] not in warned:
                     self.notify(f"⏰ {self._head(o)}: осталось {max(1, o['seconds_left'] // 60)} мин, чтобы оплатить "
                                 "и нажать «Оплачено» в Bybit")
                     self.store.set("p2p_warned", (warned + [o["id"]])[-50:])
+        self.store.set("p2p_paid_at", {k: v for k, v in paid_at.items() if k in current})
         # ордер пропал из «в процессе» — узнаём, чем закончился
         gone = [oid for oid in seen if oid not in current]
         if gone and not first_run:
@@ -354,7 +428,8 @@ class P2PDesk:
             for oid in gone:
                 o = recent.get(oid)
                 if o and o["status"] in (40, 50, 80):
-                    self.notify(self._order_text(o, new=False))
+                    if everything:
+                        self.notify(self._order_text(o, new=False))
                     finished |= o["status"] == 50
             if finished:
                 try:
@@ -485,6 +560,32 @@ class P2PDesk:
         rows = fifo_journal(self.completed(int((time.time() - days * 86400) * 1000), pages=40))
         return journal_csv(rows), len(rows)
 
+    def level(self) -> dict:
+        """Прогресс до следующего уровня мейкера — история ордеров за полгода, раз в 10 минут."""
+        if self._level and time.time() - self._level[0] < LEVEL_CACHE:
+            return self._level[1]
+        result = level_progress(self.p2p.orders(int((time.time() - 180 * 86400) * 1000), pages=10))
+        self._level = (time.time(), result)
+        return result
+
+    def my_ads(self, currency: str) -> list[dict]:
+        """Ваши объявления с местом в выдаче: среди всех и среди тех, у кого те же способы оплаты."""
+        names = self.payment_names()
+        out = []
+        for item in self.p2p.my_ads():
+            ad = my_ad_view(item, names)
+            if ad["status"] == 30:
+                continue
+            buyers, sellers = self._raw.get(ad["currency"], ([], []))
+            pool = sellers if ad["side"] == "sell" else buyers
+            if pool:
+                ad["rank"] = rank(ad["price"], ad["side"], pool, skip=ad["id"])
+                ad["rank_pay"] = rank(ad["price"], ad["side"], pool, ad["pay_ids"], skip=ad["id"])
+                best = [a.price for a in pool if a.id != ad["id"] and a.online and set(ad["pay_ids"]) & set(a.payments)]
+                ad["best_rival"] = (min(best) if ad["side"] == "sell" else max(best)) if best else None
+            out.append(ad)
+        return sorted(out, key=lambda a: (a["currency"] != currency, not a["online"]))
+
     # --- экран P2P ---------------------------------------------------------------------
     def view(self, currency: str) -> dict:
         out = {"available": True, "currencies": self.currencies, "currency": currency, "error": ""}
@@ -494,9 +595,12 @@ class P2PDesk:
                                                       "averageReleaseTime", "averageTransferTime", "recentTradeAmount",
                                                       "goodAppraiseRate", "authStatus", "isOnline")}
             out["market"] = self.market(currency)
+            out["my_ads"] = self.my_ads(currency)
             out["pending"] = [order_view(o) for o in self.p2p.pending_orders()]
             out["stats"] = stats(self.p2p.orders(int((time.time() - 30 * 86400) * 1000)))
             out["ledger"] = self.ledger(currency)
+            out["level"] = self.level()
+            out["notify"] = self.notify_mode
         except Exception as exc:
             log.warning("p2p view: %s", exc)
             out["error"] = explain(exc)

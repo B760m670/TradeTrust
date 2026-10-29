@@ -35,7 +35,7 @@ class FakeP2P:
                        ad("b4", 81.5, "0")]
         self.sellers = [ad("s1", 83.1, "1"), ad("s2", 82.6, "1", hi=3000), ad("s3", 82.9, "1", online=False),
                         ad("s4", 83.4, "1")]
-        self.pending, self.history, self.calls, self.details = [], [], [], {}
+        self.pending, self.history, self.calls, self.details, self.my = [], [], [], {}, []
 
     def request(self, method, url, data=None, headers=None, timeout=None):
         assert method == "POST" and headers["X-BAPI-API-KEY"] == "K"
@@ -47,7 +47,7 @@ class FakeP2P:
             "/v5/p2p/user/payment/list": lambda: [
                 {"id": "-1", "paymentType": 377, "paymentConfigVo": {"paymentType": "377", "paymentName": "Balance"}},
                 {"id": "7110", "paymentType": 75, "paymentConfigVo": {"paymentType": "75", "paymentName": "Tinkoff"}}],
-            "/v5/p2p/item/personal/list": lambda: {"items": [{"currencyId": "RUB", "feeRate": "0.1"}]},
+            "/v5/p2p/item/personal/list": lambda: {"items": self.my or [{"currencyId": "RUB", "feeRate": "0.1"}]},
             "/v5/p2p/order/pending/simplifyList": lambda: {"count": len(self.pending), "items": self.pending},
             "/v5/p2p/order/simplifyList": lambda: {"count": len(self.history), "items": self.history},
             "/v5/p2p/order/info": lambda: self.details.get(body["orderId"], {}),
@@ -100,6 +100,7 @@ def test_market_uses_your_payments_and_filters(desk):
 
 def test_orders_notifications(desk, monkeypatch):
     d, fake, sent = desk
+    d.set_prefs("RUB", {"notify": "all"})  # «все» — как в приложении Bybit: каждый ордер и смена статуса
     fake.pending = [order("o1", 10)]
     d.poll()
     assert sent == []  # первый запуск: уже открытые ордера не объявляем
@@ -204,3 +205,42 @@ def test_fifo_marks_sales_without_purchases():
     from tradetrust.bot.p2p import fifo_journal, order_view
     rows = fifo_journal([order_view(order("s", 50, side=1, amount=8300, price=83))])
     assert rows[0]["uncovered"] == pytest.approx(100) and rows[0]["result"] == 0
+
+
+def test_important_mode_skips_duplicates_and_reminds_to_check_bank(desk, monkeypatch):
+    d, fake, sent = desk
+    assert d.notify_mode == "important"  # по умолчанию — без дублей уведомлений Bybit
+    fake.pending = []
+    d.poll()
+    fake.pending = [order("o1", 10)]
+    d.poll()
+    fake.pending = [order("o1", 20)]  # покупатель отметил оплату — это Bybit покажет сам
+    d.poll()
+    assert sent == []
+    clock = [time.time() + p2pmod.RELEASE_REMIND + 5]
+    monkeypatch.setattr(p2pmod.time, "time", lambda: clock[0])
+    d.poll()
+    assert len(sent) == 1 and "отметил оплату" in sent[0] and "не отпускайте" in sent[0]
+    d.poll()
+    assert len(sent) == 1  # напоминание — один раз
+    fake.pending = [order("o1", 30)]
+    d.poll()
+    assert sent[-1].startswith("⚠️ Апелляция")
+
+
+def test_my_ads_rank_and_level_progress(desk):
+    from tradetrust.bot.p2p import level_progress
+    d, fake, _ = desk
+    d.market("RUB")
+    fake.my = [{"id": "m1", "side": "1", "tokenId": "USDT", "currencyId": "RUB", "price": "82.8", "lastQuantity": "900",
+                "quantity": "995", "executedQuantity": "95", "minAmount": "5000", "maxAmount": "30000", "status": 10,
+                "paymentTerms": [{"paymentType": 75}], "feeRate": "0.003"}]
+    ad = d.my_ads("RUB")[0]
+    # продавцы дешевле 82,8: s2 (82,6, тот же Tinkoff); s3 не в сети — не считается
+    assert ad["side"] == "sell" and ad["rank"] == 2 and ad["rank_pay"] == 2 and ad["best_rival"] == 82.6
+    assert ad["payments"] == ["Tinkoff"] and ad["fee_pct"] == 0.3 and ad["online"]
+    now = time.time()
+    orders = [order(str(i), 50, amount=8300, price=83, createDate=str(int(now * 1000) - i), targetUserId=f"u{i % 6}")
+              for i in range(24)]
+    lv = level_progress(orders, now)
+    assert lv["counterparties"] == 6 and lv["volume_30d"] == 2400 and lv["levels"][0]["done"] and lv["next"] == "Опытный"
