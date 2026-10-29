@@ -30,7 +30,7 @@ const P2P_VIEW = {
     asks: [P2P_AD], total: { bids: 4, asks: 4 }, payments: [{ id: "75", name: "Tinkoff", ads: 7, mine: true }, { id: "14", name: "способ #14", ads: 2, mine: false }] },
   my_ads: [{ id: "m1", side: "sell", token: "USDT", currency: "RUB", price: 82.9, left: 900, total: 995, done: 95,
     min_amount: 5000, max_amount: 30000, payments: ["Tinkoff"], online: true, status_text: "в сети", fee_pct: 0.3,
-    rank: 3, rank_pay: 1, best_rival: 82.95 }],
+    rank: 3, rank_pay: 2, best_rival: 82.85, top_price: 82.84 }],
   level: { counterparties: 4, volume_30d: 450, next: "Регулярный", levels: [
     { name: "Регулярный", people: 5, volume: 2000, perks: "покупка и продажа", done: false },
     { name: "Опытный", people: 5, volume: 10000, perks: "до 50 000 USDT", done: false }] },
@@ -118,6 +118,7 @@ beforeEach(() => {
         { exchange: "okex", name: "OKX", price: 99.9, spread_pct: 0.01, volume_usd: 9e7, stale: true, anomaly: false, thin: false, url: null, diff_pct: null }] }
       : url.startsWith("/api/p2p?") || url === "/api/p2p" ? P2P_VIEW
       : url === "/api/p2p/prefs" ? { message: "Сохранено", prefs: P2P_VIEW.market.prefs }
+      : url === "/api/p2p/ad" ? { message: "Готово" }
       : url === "/api/p2p/journal" ? { message: "Журнал отправлен в Telegram: 41 ордеров" }
       : url.startsWith("/api/candles") ? { coin: "SOL", interval: new URL(url, "http://x").searchParams.get("interval"),
         time: [1000, 1900], open: [10, 11], high: [12, 12], low: [9, 10], close: [11, 11.5], volume: [5, 6], ema_fast: [], ema_slow: [], atr: [], position: null }
@@ -222,18 +223,23 @@ describe("mini app", () => {
     try {
       await renderApp();
       fireEvent.click(await screen.findByRole("button", { name: /P2P · USDT/ }));
-      expect(await screen.findByText("Стакан сейчас")).toBeTruthy();
-      expect(screen.getByText("+0,55%")).toBeTruthy(); // чистыми: 0,85% до расходов минус 0,3% комиссии мейкера
-      expect(screen.getByText(/До уровня/)).toBeTruthy(); // прогресс до «Регулярного»: 4 из 5 контрагентов
+      expect(await screen.findByText("Моё объявление · продажа")).toBeTruthy(); // вкладка «Мейкер» — первая
+      expect(screen.getByText(/До уровня «Регулярный»/)).toBeTruthy();
       expect(screen.getByText(/Покупатель отметил оплату/)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "способ #14" }));
-      await waitFor(() => expect(calls.find((c) => c.url === "/api/p2p/prefs")?.body).toEqual({ currency: "RUB", payments: ["75", "14"] }));
-      fireEvent.click(screen.getByRole("tab", { name: /Мои/ }));
-      expect(await screen.findByText("Мои объявления")).toBeTruthy();
-      expect(screen.getByText(/по банкам/)).toBeTruthy(); // #3 среди всех, #1 среди тех же банков
-      expect(screen.getByText(/Отпускайте USDT, только когда деньги видны в банке/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /Стать #1 · 82,84/ }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/p2p/ad")?.body).toEqual({ id: "m1", action: "price", value: 82.84 }));
+      fireEvent.click(screen.getByRole("button", { name: "Снять с публикации" }));
+      await waitFor(() => expect(calls.some((c) => c.url === "/api/p2p/ad" && (c.body as { action: string }).action === "offline")).toBe(true));
+      expect(screen.getByText("Круг: купил → продал")).toBeTruthy();
       fireEvent.click(screen.getByRole("radio", { name: "Все" }));
       await waitFor(() => expect(calls.some((c) => c.url === "/api/p2p/prefs" && (c.body as { notify?: string }).notify === "all")).toBe(true));
+      fireEvent.click(screen.getByRole("tab", { name: "Рынок" }));
+      expect(await screen.findByText("Стакан сейчас")).toBeTruthy();
+      expect(screen.getByText("+0,55%")).toBeTruthy(); // чистыми: 0,85% до расходов минус 0,3% комиссии мейкера
+      fireEvent.click(screen.getByRole("button", { name: "способ #14" }));
+      await waitFor(() => expect(calls.find((c) => c.url === "/api/p2p/prefs" && (c.body as { payments?: string[] }).payments)?.body).toEqual({ currency: "RUB", payments: ["75", "14"] }));
+      fireEvent.click(screen.getByRole("tab", { name: /Ордера/ }));
+      expect(await screen.findByText(/Отпускайте USDT в Bybit, только когда деньги видны в банке/)).toBeTruthy();
       fireEvent.click(screen.getByRole("tab", { name: "Карты" }));
       expect(await screen.findByText(/Оборот за месяц 2 900 000 из 3 500 000/)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "Прислать журнал сделок в Telegram" }));

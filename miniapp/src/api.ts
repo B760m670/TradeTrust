@@ -258,6 +258,8 @@ export interface P2PMyAd {
   id: string; side: "buy" | "sell"; token: string; currency: string; price: number; left: number; total: number;
   done: number; min_amount: number; max_amount: number; payments: string[]; online: boolean; status_text: string;
   fee_pct: number; rank?: number; rank_pay?: number; best_rival?: number | null;
+  /** цена, с которой объявление станет первым среди тех же банков */
+  top_price?: number | null;
 }
 export interface P2PLevel {
   counterparties: number; volume_30d: number; next: string | null;
@@ -376,6 +378,8 @@ export const api = {
   p2p: (currency?: string) => request<P2PView>(`/api/p2p${currency ? `?currency=${currency}` : ""}`),
   p2pPrefs: (currency: string, changes: Partial<P2PPrefs> & { notify?: P2PNotify }) =>
     request<{ message: string; prefs: P2PPrefs }>("/api/p2p/prefs", "POST", { currency, ...changes }),
+  p2pAd: (id: string, action: "price" | "quantity" | "offline" | "online", value?: number) =>
+    request<Message>("/api/p2p/ad", "POST", { id, action, ...(value != null ? { value } : {}) }),
   p2pJournal: () => request<{ message: string }>("/api/p2p/journal", "POST", {}),
   saveAdmin: (changes: Partial<AdminSettings>) => request<Message>("/api/admin/settings", "POST", changes),
   userAction: (id: string, action: "reset" | "block" | "unblock" | "delete") =>

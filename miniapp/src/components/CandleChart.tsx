@@ -22,8 +22,8 @@ import { CloseCountdown, PERIOD_SEC } from "./countdown";
 
 // те же цвета, что в styles.css (--up, --down, --accent, --demo, --faint) для каждой темы; third — третья линия индикаторов
 const PALETTE: Record<Theme, { up: string; down: string; fast: string; slow: string; third: string; text: string; grid: string }> = {
-  dark: { up: "#20D49A", down: "#FF5470", fast: "#8B7CFF", slow: "#3B9EFF", third: "#F062C0", text: "rgba(236,239,244,0.45)", grid: "rgba(255,255,255,0.05)" },
-  light: { up: "#0A9A6A", down: "#E33B55", fast: "#6C5CF0", slow: "#1F6FE5", third: "#D23C9F", text: "rgba(13,16,22,0.45)", grid: "rgba(13,16,22,0.06)" },
+  dark: { up: "#20D49A", down: "#FF5470", fast: "#F5B400", slow: "#3B9EFF", third: "#F062C0", text: "rgba(236,239,244,0.45)", grid: "rgba(255,255,255,0.05)" },
+  light: { up: "#0A9A6A", down: "#E33B55", fast: "#C98500", slow: "#1F6FE5", third: "#D23C9F", text: "rgba(13,16,22,0.45)", grid: "rgba(13,16,22,0.06)" },
 };
 type Colors = (typeof PALETTE)[Theme];
 const VISIBLE_BARS = 90;

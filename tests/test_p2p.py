@@ -35,7 +35,7 @@ class FakeP2P:
                        ad("b4", 81.5, "0")]
         self.sellers = [ad("s1", 83.1, "1"), ad("s2", 82.6, "1", hi=3000), ad("s3", 82.9, "1", online=False),
                         ad("s4", 83.4, "1")]
-        self.pending, self.history, self.calls, self.details, self.my = [], [], [], {}, []
+        self.pending, self.history, self.calls, self.details, self.my, self.ad = [], [], [], {}, [], {}
 
     def request(self, method, url, data=None, headers=None, timeout=None):
         assert method == "POST" and headers["X-BAPI-API-KEY"] == "K"
@@ -51,6 +51,9 @@ class FakeP2P:
             "/v5/p2p/order/pending/simplifyList": lambda: {"count": len(self.pending), "items": self.pending},
             "/v5/p2p/order/simplifyList": lambda: {"count": len(self.history), "items": self.history},
             "/v5/p2p/order/info": lambda: self.details.get(body["orderId"], {}),
+            "/v5/p2p/item/info": lambda: self.ad if body["itemId"] == self.ad.get("id") else {},
+            "/v5/p2p/item/update": lambda: {"needSecurityRisk": False},
+            "/v5/p2p/item/cancel": lambda: None,
         }[path]()
         return FakeResponse({"ret_code": 0, "ret_msg": "SUCCESS", "result": result, "time_now": "1"})
 
@@ -244,3 +247,46 @@ def test_my_ads_rank_and_level_progress(desk):
               for i in range(24)]
     lv = level_progress(orders, now)
     assert lv["counterparties"] == 6 and lv["volume_30d"] == 2400 and lv["levels"][0]["done"] and lv["next"] == "Опытный"
+
+
+MY_AD = {"id": "m1", "side": 1, "tokenId": "USDT", "currencyId": "RUB", "priceType": 0, "premium": "", "price": "82.8",
+         "lastQuantity": "900", "quantity": "995", "minAmount": "5000", "maxAmount": "30000", "remark": "только 1-е лицо",
+         "status": 10, "paymentPeriod": 15, "paymentTerms": [{"id": "7110", "paymentType": "75"}],
+         "tradingPreferenceSet": {"isKyc": 1, "hasCompleteRateDay30": 1, "completeRateDay30": "90"}}
+
+
+def test_ad_actions_send_full_body_and_guard_price(desk):
+    d, fake, _ = desk
+    fake.ad = dict(MY_AD)
+    assert d.ad_action("m1", "price", 82.59) == "Цена объявления: 82,59 RUB"  # лучший с Tinkoff — s2 по 82,6
+    path, body = [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1]
+    assert body["actionType"] == "MODIFY" and body["price"] == "82.59" and body["quantity"] == "900"
+    assert body["paymentIds"] == ["7110"] and body["remark"] == "только 1-е лицо" and body["id"] == "m1"
+    assert body["tradingPreferenceSet"] == {"isKyc": "1", "hasCompleteRateDay30": "1", "completeRateDay30": "90"}
+    with pytest.raises(ValueError, match="опечатку"):
+        d.ad_action("m1", "price", 85.0)  # +2,9% от лучшего конкурента
+    d.ad_action("m1", "quantity", 500)
+    assert [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1][1]["quantity"] == "500"
+    d.ad_action("m1", "offline")
+    assert fake.calls[-1] == ("/v5/p2p/item/cancel", {"itemId": "m1"})
+    fake.ad["status"] = 20
+    d.ad_action("m1", "online")
+    assert [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1][1]["actionType"] == "ACTIVE"
+    with pytest.raises(ValueError):
+        d.ad_action("nope", "offline")
+
+
+def test_overtaken_and_running_low_alerts(desk):
+    d, fake, sent = desk
+    fake.my = [{**MY_AD, "price": "82.5", "paymentTerms": [{"paymentType": 75}]}]
+    d._ad_alerts()  # первый: #1 среди Tinkoff (s2 — 82,6)
+    assert sent == []
+    fake.sellers.append(ad("s9", 82.4, "1"))
+    d._cache.clear()
+    d._ad_alerts()
+    assert sent[0].startswith("📉 Вас обогнали") and "82,39" in sent[0]
+    fake.my = [{**MY_AD, "price": "82.4", "lastQuantity": "50", "paymentTerms": [{"paymentType": 75}]}]
+    d._cache.clear()
+    d._ad_alerts()
+    d._ad_alerts()
+    assert sum(t.startswith("🪫") for t in sent) == 1
