@@ -256,6 +256,8 @@ class Bot:
     def set_enabled(self, on: bool) -> str:
         if on == self.enabled:
             return "Бот уже включён" if on else "Бот уже выключен"
+        if on and self.cfg.read_only:
+            raise ValueError("ключ этого счёта только для чтения — бот на нём не включается")
         if on and self.needs_capital and self.cfg.capital_usdt <= 0:
             where = "на реальном счёте" if self.cfg.account == "real" else "на фьючерсах (деньги общие со спотом)"
             raise ValueError(f"сначала задайте капитал бота — сколько USDT он может использовать {where}")
@@ -722,6 +724,8 @@ class Bot:
         """Рыночная покупка или продажа на споте по сумме в USDT или количеству монеты.
         Продать можно только своё — то, что держит бот, он продаёт сам (или «Закрыть позицию»)."""
         coin = coin.upper()
+        if self.cfg.read_only:
+            raise ValueError("ключ этого счёта только для чтения — сделки делайте в приложении Bybit")
         if self.cfg.market == "linear":
             # на фьючерсах позиция по паре одна на счёт: ручная сделка смешалась бы с позицией бота
             # и повторилась бы у подписчиков копитрейдинга
@@ -829,6 +833,7 @@ class Bot:
         return {
             "env": self.cfg.env, "market": self.cfg.market, "mode": self.mode, "paused": self.paused,
             "account": self.cfg.account,
+            "read_only": self.cfg.read_only,
             "enabled": self.enabled,
             "equity": {k: v for k, v in eq.items() if k != "prices"},
             "positions": positions,

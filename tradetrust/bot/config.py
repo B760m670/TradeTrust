@@ -75,6 +75,8 @@ class Config:
     max_users: int = 100               # сколько демо-счетов максимум (память сервера)
     account: str = "owner"             # owner — основной счёт владельца; real — его реальный счёт; demo — пользователя
     bot_enabled: bool = True           # бот торгует на этом счёте; на реальном по умолчанию выключен
+    read_only: bool = False            # ключ только для чтения: счёт виден, торговли и бота нет
+    owner_demo: bool = False           # показывать владельцу демо-счёт, когда подключён реальный (OWNER_DEMO=1)
 
     @property
     def has_real(self) -> bool:
@@ -132,6 +134,7 @@ class Config:
             paper_start_usdt=_float("PAPER_START_USDT", 1000.0),
             public_demo=_env("PUBLIC_DEMO", "1").lower() in ("1", "true", "yes", "да"),
             max_users=int(_float("MAX_USERS", 100)),
+            owner_demo=_env("OWNER_DEMO", "0").lower() in ("1", "true", "yes", "да"),
         )
         cfg.validate()
         return cfg

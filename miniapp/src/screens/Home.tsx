@@ -3,7 +3,7 @@ import type { Status } from "../api";
 import type { Tab } from "../App";
 import { AccountSegment } from "../components/Account";
 import { BotPowerButton, BotState, PauseButton, type Act } from "../components/BotControls";
-import { BotIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, WalletIcon } from "../components/icons";
+import { BookIcon, BotIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, TrendIcon, WalletIcon } from "../components/icons";
 import { BigMoney, Card, CoinAvatar, Flash, LiveBadge, Logo, Skeleton } from "../components/ui";
 import { pct, price, tone, usd } from "../format";
 import { useTickers } from "../live";
@@ -43,6 +43,8 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
     .filter(([c, g]) => g.cross_up && g.regime_ok && g.trend_ok !== false && !s.positions.some((p) => p.coin === c))
     .map(([c]) => c).slice(0, 3);
   const real = s.env === "mainnet";
+  // ключ реального счёта только для чтения: сделок и бота здесь нет — только баланс, активы и P2P
+  const viewOnly = !!s.read_only;
 
   return (
     <div className="home">
@@ -83,8 +85,9 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         <Card className="real-card">
           <strong>Реальный счёт Bybit</strong>
           <p className="muted small">
-            Сделки здесь — настоящие деньги. Бот {s.enabled === false ? "выключен: торгуете только вы" :
-              `включён и торгует в пределах ${usd(s.settings.capital_usdt)} USDT`}.
+            {viewOnly ? "Ключ только для чтения: баланс, активы и ордера видны здесь, сделки — в приложении Bybit."
+              : <>Сделки здесь — настоящие деньги. Бот {s.enabled === false ? "выключен: торгуете только вы" :
+                `включён и торгует в пределах ${usd(s.settings.capital_usdt)} USDT`}.</>}
           </p>
         </Card>
       )}
@@ -100,13 +103,25 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </div>
       </section>
 
-      <div className="quick">
-        <button onClick={() => onTab("trade")}><BuyIcon size={20} className="tone-up" />Купить</button>
-        <button onClick={() => onTab("trade")}><SellIcon size={20} className="tone-down" />Продать</button>
-        <button onClick={onBot}><BotIcon size={20} className="tone-accent" />Бот</button>
-        <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
-      </div>
+      {viewOnly ? (
+        <div className="quick">
+          {s.p2p && onP2P && <button onClick={onP2P}><BookIcon size={20} className="tone-accent" />P2P</button>}
+          {s.exchanges && onExchanges && <button onClick={onExchanges}><WalletIcon size={20} className="tone-up" />Биржи</button>}
+          <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
+          <button onClick={() => onTab("markets")}><TrendIcon size={20} className="muted" />Рынки</button>
+        </div>
+      ) : (
+        <div className="quick">
+          <button onClick={() => onTab("trade")}><BuyIcon size={20} className="tone-up" />Купить</button>
+          <button onClick={() => onTab("trade")}><SellIcon size={20} className="tone-down" />Продать</button>
+          <button onClick={onBot}><BotIcon size={20} className="tone-accent" />Бот</button>
+          <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
+        </div>
+      )}
 
+      {viewOnly && s.p2p && onP2P && <P2PCard onOpen={onP2P} />}
+
+      {!viewOnly && <>
       <div className="sec-head"><h3 className="section-title">Торговые боты</h3>
         <button className="link-btn" onClick={onBot}>Открыть <ChevronIcon size={14} /></button></div>
       <Card className="bot-card">
@@ -131,6 +146,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </div>
       </Card>
 
+
       {s.proposals.length > 0 && (
         <>
           <h3 className="section-title">Бот предлагает купить</h3>
@@ -146,6 +162,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
           </div>
         </>
       )}
+      </>}
 
       {s.exchanges && onExchanges && (
         <>
@@ -163,7 +180,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </>
       )}
 
-      {s.p2p && onP2P && (
+      {s.p2p && onP2P && !viewOnly && (
         <>
           <div className="sec-head"><h3 className="section-title">P2P</h3>
             <button className="link-btn" onClick={onP2P}>Открыть <ChevronIcon size={14} /></button></div>
@@ -200,5 +217,25 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </>
       )}
     </div>
+  );
+}
+
+/** Карточка P2P на главной: при счёте «только просмотр» — сразу под балансом. */
+function P2PCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <>
+      <div className="sec-head"><h3 className="section-title">P2P</h3>
+        <button className="link-btn" onClick={onOpen}>Открыть <ChevronIcon size={14} /></button></div>
+      <Card className="bot-card">
+        <button className="bot-card-main" onClick={onOpen}>
+          <span className="led" aria-hidden="true" />
+          <span className="row-main">
+            <strong>P2P · USDT</strong>
+            <span className="muted small">ваши объявления и место в выдаче, ордера, уровень мейкера, карты и лимиты</span>
+          </span>
+          <ChevronIcon size={18} />
+        </button>
+      </Card>
+    </>
   );
 }

@@ -41,7 +41,9 @@ def test_key_check_refuses_withdrawal_and_read_only():
     ok = {"readOnly": 0, "permissions": {"Spot": ["SpotTrade"], "Wallet": []}, "ips": ["148.135.203.10"]}
     assert check_key(ok) == ("", "")
     assert "вывод" in check_key({**ok, "permissions": {"Spot": ["SpotTrade"], "Wallet": ["Withdraw"]}})[0]
-    assert "чтения" in check_key({**ok, "readOnly": 1})[0]
+    # ключ только для чтения подключается — для просмотра счёта; торговать и включать бота нельзя
+    assert check_key({**ok, "readOnly": 1, "permissions": {}})[0] == ""
+    assert "чтения" in check_key({**ok, "readOnly": 1, "permissions": {}})[1]
     assert "Спот" in check_key({**ok, "permissions": {"Spot": []}})[0]
     assert check_key({**ok, "ips": ["*"]}) == ("", check_key({**ok, "ips": []})[1])
     assert "IP" in check_key({**ok, "ips": ["*"]})[1]
@@ -173,3 +175,23 @@ def test_has_real_needs_both_keys_and_a_non_real_main_account():
     assert not Config(env="mainnet", api_key="a", api_secret="b", real_api_key="k", real_api_secret="s").has_real
     with pytest.raises(ValueError):
         Config(real_api_key="k").validate()
+
+
+def test_demo_hidden_leaves_only_real_account(owner):
+    acc, _, _, _ = owner
+    hidden = Accounts(acc.main, acc.real, show_demo=False)
+    assert list(hidden.bots()) == ["real"] and hidden.active() is acc.real and hidden.all() == [acc.real]
+    assert hidden.info()["demo_hidden"] and [a["id"] for a in hidden.info()["list"]] == ["real"]
+    with pytest.raises(ValueError):
+        hidden.switch("main")
+    assert Accounts(acc.main, None, show_demo=False).show_demo  # без реального счёта демо остаётся
+
+
+def test_read_only_real_account_cannot_trade(owner):
+    acc, _, _, _ = owner
+    ro = make(replace(acc.real.cfg, read_only=True, capital_usdt=300), FakeExchange(), Recorder())
+    with pytest.raises(ValueError, match="только для чтения"):
+        ro.set_enabled(True)
+    with pytest.raises(ValueError, match="только для чтения"):
+        ro.manual_order("SOL", "buy", usdt=10)
+    assert ro.status()["read_only"]
