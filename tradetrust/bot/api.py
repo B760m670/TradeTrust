@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import admin, webapp_auth
+from . import p2p as p2pmod
 from .config import MODES
 from .engine import CHART_INTERVALS, Bot
 
@@ -257,6 +258,21 @@ def make_handler(owner_bot: Bot, token: str, tg_token: str = "", owner_id: str =
                     telegram.send_document(name, data, f"🧾 Журнал P2P за полгода: {count} завершённых ордеров. "
                                                        "Результат продаж — по FIFO, для учёта и 3-НДФЛ.")
                     return self._send(200, {"message": f"Журнал отправлен в Telegram: {count} ордеров"})
+                if parts == ["api", "p2p", "ad"]:
+                    if not self.owner or p2p is None:
+                        return self._send(403, {"error": "P2P — только для владельца"})
+                    body = self._body()
+                    value = body.get("value")
+                    if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                        return self._send(400, {"error": "value: число"})
+                    try:
+                        return self._send(200, {"message": p2p.ad_action(str(body.get("id", "")), str(body.get("action", "")),
+                                                                         value)})
+                    except ValueError as exc:
+                        return self._send(400, {"error": str(exc)})
+                    except Exception as exc:
+                        log.warning("p2p ad: %s", exc)
+                        return self._send(502, {"error": p2pmod.explain(exc)})
                 if parts == ["api", "p2p", "prefs"]:
                     if not self.owner or p2p is None:
                         return self._send(403, {"error": "P2P — только для владельца"})

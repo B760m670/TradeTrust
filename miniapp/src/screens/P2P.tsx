@@ -1,11 +1,10 @@
-// P2P владельца: спред по вашим фильтрам, лучшие объявления, ваши ордера и статистика. Только просмотр —
-// покупать, продавать и отпускать монеты по-прежнему в Bybit: перед отпуском USDT деньги нужно увидеть в банке.
+// P2P владельца-мейкера: ваше объявление (цена, «Стать #1», количество, снять/вернуть), круг «купил → продал»,
+// рынок по вашим банкам, ордера, карты и итоги. Отпускать монеты — только в Bybit, после того как деньги видны в банке.
 import { useEffect, useState } from "react";
 import { api, type P2PAd, type P2PLedger, type P2PMyAd, type P2PNotify, type P2POrder, type P2PPrefs, type P2PView } from "../api";
-import { ChevronIcon } from "../components/icons";
-import { Card, Chip, Empty, Segmented, Skeleton, Tabs, Tile } from "../components/ui";
-import { compact, dateTime, pct, price } from "../format";
-import { haptic, prefs as store } from "../telegram";
+import { Card, Empty, Segmented, Skeleton, Tabs, Tile } from "../components/ui";
+import { compact, pct, price } from "../format";
+import { confirmAction, haptic, prefs as store } from "../telegram";
 
 const REFRESH_MS = 20_000;
 const SYMBOL: Record<string, string> = { RUB: "₽", USD: "$", KZT: "₸", EUR: "€" };
@@ -29,11 +28,14 @@ function useP2P(currency: string | null) {
   return { data, reload: () => setTick((t) => t + 1) };
 }
 
-type Section = "market" | "mine" | "cards" | "stats";
+type Section = "maker" | "market" | "orders" | "cards" | "stats";
 
 export function P2P() {
   const [currency, setCurrency] = useState<string | null>(() => store.getLocal("p2p_currency"));
-  const [section, setSection] = useState<Section>(() => (store.getLocal("p2p_tab") as Section | null) ?? "market");
+  const [section, setSection] = useState<Section>(() => {
+    const saved = store.getLocal("p2p_tab") as Section | null;
+    return saved && ["maker", "market", "orders", "cards", "stats"].includes(saved) ? saved : "maker";
+  });
   const { data, reload } = useP2P(currency);
   const cur = data?.currency ?? currency ?? "RUB";
   const pick = (c: string) => { setCurrency(c); store.set("p2p_currency", c); };
@@ -45,28 +47,38 @@ export function P2P() {
       <Empty title="P2P не подключён">
         {data.problems?.map((p) => <p key={p} className="tone-amber">⚠️ {p}</p>)}
         Добавьте в <code>/opt/tradetrust/.env</code> строку <code>BYBIT_P2P=1</code> и перезапустите бота. Нужен ключ
-        с правами P2P «только просмотр» и статус мейкера на Bybit.
+        с правами P2P и статус мейкера на Bybit.
       </Empty>
     );
   }
   const m = data.market;
   const pending = data.pending ?? [];
-  const waiting = pending.filter((o) => o.status === 20 && o.side === "sell").length;
+  const paid = pending.filter((o) => o.status === 20 && o.side === "sell");
   return (
     <div className="p2p">
-      <Hero data={data} currency={cur} onCurrency={pick} />
+      <Head data={data} currency={cur} onCurrency={pick} />
+      <Level data={data} />
       {data.error && <Card className="p2p-error"><strong>Нет данных P2P</strong><p className="small">{data.error}</p></Card>}
-      {waiting > 0 && (
-        <button className="p2p-alert" onClick={() => open("mine")}>
-          <span className="p2p-pulse" aria-hidden="true" />
-          <span className="row-main"><strong>Покупатель отметил оплату{waiting > 1 ? ` · ${waiting}` : ""}</strong>
-            <span className="small">Проверьте поступление в банке от того же человека, потом отпустите USDT в Bybit</span></span>
-          <ChevronIcon size={16} />
+      {paid.length > 0 && (
+        <button className="p2p-alert" onClick={() => open("orders")}>
+          <span className="p2p-alert-ic" aria-hidden="true">💰</span>
+          <span className="row-main"><strong>Покупатель отметил оплату{paid.length > 1 ? ` · ${paid.length}` : ""}</strong>
+            <span className="small">{money(paid[0].amount, paid[0].currency)}{paid[0].buyer_name ? ` от ${paid[0].buyer_name}` : ""} — проверьте банк</span></span>
         </button>
       )}
-      <Tabs label="Разделы P2P" value={section} onChange={open} options={[
-        ["market", "Рынок"], ["mine", `Мои${pending.length ? ` · ${pending.length}` : ""}`], ["cards", "Карты"], ["stats", "Итоги"],
-      ]} />
+      <div className="p2p-pills">
+        <Tabs label="Разделы P2P" value={section} onChange={open} options={[
+          ["maker", "Мейкер"], ["market", "Рынок"], ["orders", `Ордера${pending.length ? ` · ${pending.length}` : ""}`],
+          ["cards", "Карты"], ["stats", "Итоги"],
+        ]} />
+      </div>
+      {section === "maker" && (
+        <>
+          <MyAds ads={data.my_ads ?? []} market={m} onChanged={reload} />
+          {m && <Cycle market={m} ads={data.my_ads ?? []} currency={cur} />}
+          <NotifyMode value={data.notify ?? "important"} currency={cur} onSaved={reload} />
+        </>
+      )}
       {section === "market" && m && (
         <>
           <Spread market={m} currency={cur} />
@@ -81,75 +93,53 @@ export function P2P() {
           </details>
         </>
       )}
-      {section === "mine" && (
-        <>
-          <MyAds ads={data.my_ads ?? []} />
-          <Orders orders={pending} />
-          <NotifyMode value={data.notify ?? "important"} currency={cur} onSaved={reload} />
-        </>
-      )}
+      {section === "orders" && <Orders orders={pending} />}
       {section === "cards" && data.ledger && m && <Cards ledger={data.ledger} prefs={m.prefs} currency={cur} onSaved={reload} />}
       {section === "stats" && data.stats && <Stats stats={data.stats} />}
     </div>
   );
 }
 
-/** Шапка: профиль мейкера, ключевые цифры и прогресс до следующего уровня. */
-function Hero({ data, currency, onCurrency }: { data: P2PView; currency: string; onCurrency: (c: string) => void }) {
+/** Шапка: аватар, ник, уровень и выполнение; валюта. */
+function Head({ data, currency, onCurrency }: { data: P2PView; currency: string; onCurrency: (c: string) => void }) {
   const a = data.account;
   const lv = data.level;
-  const next = lv?.levels.find((l) => l.name === lv.next);
   const current = lv ? [...lv.levels].reverse().find((l) => l.done)?.name ?? "Новый" : null;
   return (
-    <section className="p2p-hero">
-      <div className="p2p-hero-top">
-        <span className="p2p-ava" aria-hidden="true">{(a?.nickName ?? "P").slice(0, 1).toUpperCase()}</span>
-        <div className="row-main">
-          <strong className="p2p-nick">{a?.nickName ?? "P2P · USDT"}</strong>
-          <span className="small muted">{current ? `мейкер · ${current}` : "мейкер"} · только просмотр</span>
-        </div>
-        {data.currencies && data.currencies.length > 1 && (
-          <Segmented label="Валюта" options={data.currencies.map((c) => [c, c] as [string, string])} value={currency} onChange={onCurrency} />
-        )}
+    <header className="p2p-top">
+      <span className="p2p-ava" aria-hidden="true">{(a?.nickName ?? "P").slice(0, 1).toUpperCase()}</span>
+      <div className="row-main">
+        <strong className="p2p-nick">{a?.nickName ?? "P2P · USDT"}</strong>
+        <span className="small muted">Мейкер{current ? ` · ${current}` : ""}{a?.recentRate != null ? ` · выполнено ${a.recentRate}%` : ""}</span>
       </div>
-      {a && (
-        <div className="p2p-kpis">
-          <div><small>Выполнено · 30д</small><b className="num">{a.recentRate != null ? `${a.recentRate}%` : "—"}</b></div>
-          <div><small>Ордеров · 30д</small><b className="num">{a.recentFinishCount ?? "—"}</b></div>
-          <div><small>Всего</small><b className="num">{a.totalFinishCount ?? "—"}</b></div>
-          <div><small>Отпуск, мин</small><b className="num">{minutes(a.averageReleaseTime)}</b></div>
-        </div>
+      {data.currencies && data.currencies.length > 1 && (
+        <Segmented label="Валюта" options={data.currencies.map((c) => [c, c] as [string, string])} value={currency} onChange={onCurrency} />
       )}
-      {lv && next && (
-        <div className="p2p-level">
-          <div className="p2p-level-head">
-            <span className="small">До уровня <b>«{next.name}»</b></span>
-            <span className="faint small">{next.perks}</span>
-          </div>
-          <Progress label="Разных контрагентов" value={lv.counterparties} goal={next.people} />
-          <Progress label="Объём за 30 дней, USDT" value={lv.volume_30d} goal={next.volume} />
-        </div>
-      )}
-      {lv && !next && <p className="small tone-up p2p-note">Условия всех уровней выполнены — проверьте статус в Bybit.</p>}
-    </section>
+    </header>
   );
 }
 
-const minutes = (x: number | string | undefined) => {
-  const v = Number(x);
-  return x == null || x === "" || !Number.isFinite(v) ? "—" : v.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
-};
-
-function Progress({ label, value, goal }: { label: string; value: number; goal: number }) {
-  const share = goal ? Math.min(1, value / goal) : 1;
+/** Прогресс до следующего уровня мейкера — фирменная градиентная карточка. */
+function Level({ data }: { data: P2PView }) {
+  const lv = data.level;
+  if (!lv) return null;
+  const next = lv.levels.find((l) => l.name === lv.next);
+  if (!next) return <div className="p2p-level done"><small>Условия всех уровней выполнены — проверьте статус в Bybit</small></div>;
+  const steps = 5;
+  const share = Math.min(1, lv.volume_30d / next.volume);
   return (
-    <div className={`p2p-progress${share >= 1 ? " done" : ""}`}>
-      <div className="p2p-progress-text">
-        <span className="small muted">{label}</span>
-        <span className="small num"><b>{value.toLocaleString("ru-RU", { maximumFractionDigits: 0 })}</b> / {goal.toLocaleString("ru-RU")}</span>
+    <section className="p2p-level">
+      <small>До уровня «{next.name}» — {next.perks}</small>
+      <div className="p2p-level-n num">{lv.volume_30d.toLocaleString("ru-RU", { maximumFractionDigits: 0 })}
+        <span> / {next.volume.toLocaleString("ru-RU")} USDT</span></div>
+      <div className="p2p-steps" aria-hidden="true">
+        {Array.from({ length: steps }, (_, i) => <i key={i} className={i < Math.round(share * steps) ? "on" : undefined} />)}
       </div>
-      <div className="p2p-bar"><i style={{ width: `${share * 100}%` }} /></div>
-    </div>
+      <div className="p2p-level-row small">
+        <span>{lv.counterparties} из {next.people} контрагентов</span>
+        <span>{share >= 1 ? "объём набран" : `ещё ${Math.ceil(next.volume - lv.volume_30d).toLocaleString("ru-RU")} USDT`}</span>
+      </div>
+    </section>
   );
 }
 
@@ -319,40 +309,127 @@ function Book({ title, hint, ads, currency, names, side }: {
   );
 }
 
-/** Ваши объявления: цена, место в выдаче, сколько продано, лимиты. Менять их — в Bybit. */
-function MyAds({ ads }: { ads: P2PMyAd[] }) {
+/** Ваши объявления — главное для мейкера: цена и место в выдаче, «Стать #1», ±, количество, снять или вернуть.
+ *  Каждое изменение — с подтверждением; цену дальше 1,5% от лучшего конкурента сервер не поставит. */
+function MyAds({ ads, market, onChanged }: { ads: P2PMyAd[]; market?: P2PView["market"]; onChanged: () => void }) {
+  if (ads.length === 0) {
+    return (
+      <Card title="Моё объявление">
+        <Empty title="Объявлений нет">Разместите объявление в Bybit: P2P → Ads → «Разместить». Оно появится здесь,
+          и им можно будет управлять: цена, «Стать #1», количество, снять и вернуть.</Empty>
+        {market?.ask != null && <p className="muted small">Сейчас лучшие продают от {money(market.ask, market.currency)}.</p>}
+      </Card>
+    );
+  }
+  return <>{ads.map((a) => <AdCard key={a.id} ad={a} onChanged={onChanged} />)}</>;
+}
+
+function AdCard({ ad: a, onChanged }: { ad: P2PMyAd; onChanged: () => void }) {
+  const [price, setPrice] = useState(a.price);
+  const [qty, setQty] = useState(String(Math.round(a.left * 100) / 100));
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => setPrice(a.price), [a.price]);
+  const cur = SYMBOL[a.currency] ?? a.currency;
+  const run = async (action: "price" | "quantity" | "offline" | "online", value: number | undefined, ask: string) => {
+    if (!(await confirmAction(ask))) return;
+    haptic();
+    setBusy(true);
+    setNote(null);
+    try {
+      setNote({ text: (await api.p2pAd(a.id, action, value)).message, ok: true });
+      onChanged();
+    } catch (e) {
+      setNote({ text: (e as Error).message, ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sold = a.total ? Math.min(1, (a.total - a.left) / a.total) : 0;
+  const first = a.rank_pay === 1 || (a.rank_pay == null && a.rank === 1);
+  const step = (d: number) => setPrice((p) => Math.round((p + d) * 100) / 100);
+  const changed = Math.abs(price - a.price) >= 0.005;
+  const side = a.side === "sell" ? "продажа" : "покупка";
   return (
-    <Card title="Мои объявления" aside={<span className="muted small">{ads.filter((a) => a.online).length} в сети</span>}>
-      {ads.length === 0 ? <Empty title="Объявлений нет">Разместите объявление в Bybit: P2P → Ads → «Разместить».</Empty> : (
-        <div className="p2p-myads">
-          {ads.map((a) => {
-            const sold = a.total ? Math.min(1, (a.total - a.left) / a.total) : 0;
-            const diff = a.best_rival != null ? a.price - a.best_rival : null;
-            return (
-              <div key={a.id} className={`p2p-myad ${a.side}${a.online ? "" : " off"}`}>
-                <div className="p2p-myad-top">
-                  <Chip tone={a.side === "sell" ? "down" : "up"}>{a.side === "sell" ? "Продажа" : "Покупка"}</Chip>
-                  <span className={`small ${a.online ? "tone-up" : "muted"}`}>● {a.status_text}</span>
-                  <span className="grow" />
-                  {a.rank != null && <span className="p2p-place" title="место в выдаче среди всех / среди тех же банков">
-                    #{a.rank}{a.rank_pay != null && a.rank_pay !== a.rank ? <small> · #{a.rank_pay} по банкам</small> : null}</span>}
-                </div>
-                <div className="p2p-myad-price">
-                  <b className="num">{money(a.price, a.currency)}</b>
-                  {diff != null && <span className={`small ${diff === 0 ? "muted" : (a.side === "sell" ? diff < 0 : diff > 0) ? "tone-up" : "tone-amber"}`}>
-                    {diff === 0 ? "как у лучшего" : `${diff > 0 ? "+" : "−"}${money(Math.abs(diff), a.currency)} к лучшему конкуренту`}</span>}
-                </div>
-                <div className="p2p-bar"><i style={{ width: `${sold * 100}%` }} /></div>
-                <div className="p2p-myad-meta small muted">
-                  <span>{a.side === "sell" ? "продано" : "куплено"} {price(a.total - a.left)} из {price(a.total)} {a.token}</span>
-                  <span>{compact(a.min_amount)} – {compact(a.max_amount)} {SYMBOL[a.currency] ?? a.currency}</span>
-                </div>
-                <div className="p2p-tags">{a.payments.map((x) => <span key={x}>{x}</span>)}{a.fee_pct > 0 && <span className="faint">комиссия {pct(a.fee_pct)}</span>}</div>
-              </div>
-            );
-          })}
+    <section className={`card p2p-ad-card${a.online ? "" : " off"}`}>
+      <div className="p2p-ad-head">
+        <strong>Моё объявление · {side}</strong>
+        <span className={`small ${a.online ? "tone-up" : "muted"}`}>● {a.status_text}</span>
+      </div>
+      <div className="p2p-ad-main">
+        <div>
+          <div className="p2p-ad-price num">{money(a.price, a.currency)}</div>
+          <span className="small muted">{a.best_rival != null ? `лучший конкурент ${money(a.best_rival, a.currency)}` : "конкурентов с вашими банками нет"}</span>
         </div>
-      )}
+        {(a.rank_pay ?? a.rank) != null && (
+          <span className={`p2p-place${first ? " top" : ""}`} title="место в выдаче среди тех же банков">#{a.rank_pay ?? a.rank}</span>
+        )}
+      </div>
+      <div className="p2p-stepper">
+        <button aria-label="Цена ниже на 1 копейку" disabled={busy} onClick={() => step(-0.01)}>−</button>
+        <input className="num" inputMode="decimal" aria-label="Новая цена" value={String(price).replace(".", ",")}
+          onChange={(e) => { const v = Number(e.target.value.replace(",", ".")); if (Number.isFinite(v)) setPrice(v); }} />
+        <button aria-label="Цена выше на 1 копейку" disabled={busy} onClick={() => step(0.01)}>+</button>
+      </div>
+      <div className="p2p-ad-btns">
+        {changed ? (
+          <button className="btn btn-go" disabled={busy}
+            onClick={() => void run("price", price, `Поставить цену ${money(price, a.currency)}?`)}>Применить {String(price).replace(".", ",")}</button>
+        ) : a.top_price != null && !first ? (
+          <button className="btn btn-go" disabled={busy}
+            onClick={() => void run("price", a.top_price!, `Стать первым: цена ${money(a.top_price!, a.currency)}?`)}>
+            Стать #1 · {String(a.top_price).replace(".", ",")}</button>
+        ) : (
+          <button className="btn btn-go" disabled>Вы первый в выдаче</button>
+        )}
+        {a.online ? (
+          <button className="btn" disabled={busy} onClick={() => void run("offline", undefined, "Снять объявление с публикации? Открытые ордера останутся.")}>Снять с публикации</button>
+        ) : (
+          <button className="btn" disabled={busy} onClick={() => void run("online", undefined, "Вернуть объявление в выдачу?")}>Вернуть в выдачу</button>
+        )}
+      </div>
+      <div className="p2p-bar"><i style={{ width: `${sold * 100}%` }} /></div>
+      <div className="p2p-ad-meta small muted">
+        <span>{a.side === "sell" ? "продано" : "куплено"} {price_(a.total - a.left)} из {price_(a.total)} {a.token} · осталось {price_(a.left)}</span>
+        <span>{compact(a.min_amount)}–{compact(a.max_amount)} {cur}</span>
+      </div>
+      <div className="p2p-qty">
+        <label className="small muted">Количество в объявлении, {a.token}
+          <input className="num" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
+        </label>
+        <button className="btn" disabled={busy || !(Number(qty.replace(",", ".")) > 0) || Number(qty.replace(",", ".")) === Math.round(a.left * 100) / 100}
+          onClick={() => { const v = Number(qty.replace(",", ".")); void run("quantity", v, `Поставить в объявление ${v} ${a.token}?`); }}>Сохранить</button>
+      </div>
+      <div className="p2p-tags">{a.payments.map((x) => <span key={x}>{x}</span>)}{a.fee_pct > 0 && <span className="faint">комиссия {pct(a.fee_pct)}</span>}</div>
+      {note && <p className={`small ${note.ok ? "tone-up" : "tone-down"}`}>{note.text}</p>}
+    </section>
+  );
+}
+
+const price_ = (x: number) => price(x);
+
+/** Круг «купил → продал»: купить USDT по лучшему чужому объявлению и продать своим — сколько остаётся чистыми. */
+function Cycle({ market: m, ads, currency }: { market: NonNullable<P2PView["market"]>; ads: P2PMyAd[]; currency: string }) {
+  const sell = ads.find((a) => a.side === "sell" && a.currency === currency);
+  const buyAd = ads.find((a) => a.side === "buy" && a.currency === currency);
+  const buy = buyAd?.price ?? m.ask;
+  const sellPrice = sell?.price ?? m.ask;
+  const fee = (sell?.fee_pct || m.ad_fee_pct || m.prefs.fee_sell_pct || 0.3) / 100;
+  const per = buy != null && sellPrice != null ? sellPrice * (1 - fee) - buy * (buyAd ? 1 + fee : 1) : null;
+  return (
+    <Card title="Круг: купил → продал" aside={<span className="muted small">комиссия {pct(fee * 100)}</span>}>
+      <div className="p2p-cycle">
+        <div><small>Покупка</small><b className="num">{buy != null ? price_(buy) : "—"}</b><span className="faint small">{buyAd ? "ваше объявление" : "по лучшему продавцу"}</span></div>
+        <div><small>Продажа</small><b className="num">{sellPrice != null ? price_(sellPrice) : "—"}</b><span className="faint small">{sell ? "ваше объявление" : "по рынку"}</span></div>
+        <div className={per == null ? undefined : per >= 0 ? "win" : "loss"}><small>С 1 000 USDT</small>
+          <b className="num">{per != null ? `${per >= 0 ? "+" : "−"}${Math.abs(per * 1000).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ${SYMBOL[currency] ?? currency}` : "—"}</b>
+          <span className="faint small">чистыми</span></div>
+      </div>
+      <p className="muted small p2p-note">
+        {per != null && per < 0
+          ? "Сейчас круг в минусе: ваша цена продажи слишком близко к рынку. На уровне «Новый» это плата за объём; с «Регулярного» — своё объявление на покупку, и круг выходит в плюс."
+          : "Продаёте своим объявлением, а USDT для него покупаете по лучшему объявлению продавца (без комиссии)."}
+      </p>
     </Card>
   );
 }
@@ -375,27 +452,23 @@ function NotifyMode({ value, currency, onSaved }: { value: P2PNotify; currency: 
 
 function Orders({ orders }: { orders: P2POrder[] }) {
   return (
-    <Card title="Ордера в процессе" aside={<span className="muted small">{orders.length}</span>}>
+    <Card title="Ордера" aside={<span className="muted small">{orders.length} в работе</span>}>
       {orders.length === 0 ? <Empty title="Открытых ордеров нет">Как только кто-то откроет ордер по вашему объявлению, он появится здесь.</Empty> : (
         <div className="p2p-orders">
           {orders.map((o) => {
             const release = o.status === 20 && o.side === "sell";
-            const name = o.side === "sell" ? o.buyer_name : o.seller_name;
+            const name = (o.side === "sell" ? o.buyer_name : o.seller_name) || o.who;
+            const badge = o.status === 30 ? ["апелляция", "appeal"] : release ? ["оплачен", "paid"]
+              : o.status === 10 && o.seconds_left > 0 ? [`⏱ ${Math.ceil(o.seconds_left / 60)} мин`, "wait"] : [o.status_text, "muted"];
             return (
-              <div key={o.id} className={`p2p-order${release ? " hot" : ""}${o.status === 30 ? " appeal" : ""}`}>
-                <div className="p2p-myad-top">
-                  <Chip tone={o.side === "buy" ? "up" : "down"}>{o.side === "buy" ? "Покупаете" : "Продаёте"}</Chip>
-                  <span className="small muted">{dateTime(Math.floor(o.created / 1000))}</span>
-                  <span className="grow" />
-                  {o.status === 10 && o.seconds_left > 0 && <span className="small num tone-amber">⏱ {Math.ceil(o.seconds_left / 60)} мин</span>}
+              <div key={o.id} className={`p2p-order${release ? " hot" : ""}`}>
+                <span className="p2p-oav" aria-hidden="true">{(name || "?").slice(0, 1).toUpperCase()}</span>
+                <div className="row-main">
+                  <strong className="num">{money(o.amount, o.currency)}</strong>
+                  <span className="small muted">{price_(o.qty)} {o.token} · {o.side === "sell" ? "продаёте" : "покупаете"} · {name}</span>
                 </div>
-                <div className="p2p-myad-price">
-                  <b className="num">{money(o.amount, o.currency)}</b>
-                  <span className="small muted num">{price(o.qty)} {o.token} по {money(o.price, o.currency)}</span>
-                </div>
-                <div className="small">{o.status_text}</div>
-                <div className="small muted">{o.who}{name ? ` · в Bybit: ${name}` : ""}</div>
-                {release && <p className="p2p-warn small">Отпускайте USDT, только когда деньги видны в банке и ФИО отправителя — {name || "как в ордере"}.</p>}
+                <span className={`p2p-badge ${badge[1]}`}>{badge[0]}</span>
+                {release && <p className="p2p-warn small">Отпускайте USDT в Bybit, только когда деньги видны в банке и ФИО отправителя — {name}.</p>}
               </div>
             );
           })}

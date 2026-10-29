@@ -1,7 +1,9 @@
-"""P2P Bybit для владельца — только чтение: стакан объявлений, спред, ваши ордера, статистика, уведомления.
+"""P2P Bybit для владельца: стакан объявлений, спред, ваши ордера, статистика, уведомления — и ваши объявления
+(цена, количество, снять или вернуть в выдачу) по вашей команде из приложения.
 
-Бот ничего не покупает, не продаёт, не отпускает монеты и не меняет объявления: в P2P главный риск — люди
-(чужие деньги, фальшивые чеки), и отпускать USDT можно только после того, как вы сами увидели оплату в банке.
+Бот ничего не покупает, не продаёт и не отпускает монеты: в P2P главный риск — люди (чужие деньги, фальшивые
+чеки), и отпускать USDT можно только после того, как вы сами увидели оплату в банке. Цену объявления бот не
+поставит дальше MAX_PRICE_MOVE от лучшего конкурента — защита от опечатки.
 
 API: https://bybit-exchange.github.io/docs/p2p/guide — доступен только рекламодателям (General Advertiser и выше).
 Все запросы — POST с JSON, подпись как у V5.
@@ -40,6 +42,9 @@ LEVELS = [("Регулярный", 5, 2000.0, "объявления на пок�
 # уведомления по ордерам: important — только то, чего нет в приложении Bybit (апелляция, напоминания);
 # all — ещё и каждый новый ордер и смена статуса
 NOTIFY_MODES = ("important", "all")
+MAX_PRICE_MOVE = 1.5     # %, дальше от лучшего конкурента цену объявления не ставим
+TICK = 0.01              # шаг цены: «Стать #1» — на копейку лучше лучшего конкурента
+LOW_LEFT = 0.1           # объявление «заканчивается»: осталось меньше 10% или меньше минимальной сделки
 DEFAULT_PREFS = {"amount": 0.0, "payments": [], "min_rate": 90, "min_orders": 20, "alert_pct": 0.0,
                  # расходы на круг, % от суммы: комиссия мейкера за объявление на покупку (у Bybit по RUB ~0,25–0,3%
                  # с 19.01.2026 — сверьте в кабинете), за объявление на продажу, банк/сеть/прочее
@@ -134,6 +139,16 @@ class P2PClient:
     def my_ads(self) -> list[dict]:
         return (self._post("/v5/p2p/item/personal/list", {"page": "1", "size": "30"}) or {}).get("items") or []
 
+    def ad_detail(self, ad_id: str) -> dict:
+        return self._post("/v5/p2p/item/info", {"itemId": ad_id}) or {}
+
+    def update_ad(self, body: dict) -> dict:
+        """Изменить объявление (actionType MODIFY) или вернуть в выдачу (ACTIVE): Bybit ждёт все поля целиком."""
+        return self._post("/v5/p2p/item/update", body) or {}
+
+    def remove_ad(self, ad_id: str) -> None:
+        self._post("/v5/p2p/item/cancel", {"itemId": ad_id})
+
     def pending_orders(self) -> list[dict]:
         return (self._post("/v5/p2p/order/pending/simplifyList", {"page": 1, "size": 30}) or {}).get("items") or []
 
@@ -191,6 +206,30 @@ def rank(price: float, side: str, ads: list[Ad], pays: list[str] | None = None, 
     rivals = [a for a in ads if a.id != skip and a.online and (not pays or set(pays) & set(a.payments))]
     better = [a for a in rivals if (a.price < price if side == "sell" else a.price > price)]
     return len(better) + 1
+
+
+def top_price(side: str, best_rival: float | None) -> float | None:
+    """Цена, с которой объявление станет первым: на копейку лучше лучшего конкурента с теми же банками."""
+    if best_rival is None:
+        return None
+    return round(best_rival - TICK if side == "sell" else best_rival + TICK, 2)
+
+
+def update_body(d: dict, *, price: float | None = None, quantity: float | None = None, relist: bool = False) -> dict:
+    """Тело запроса на изменение объявления из его текущих данных (/item/info): Bybit требует все поля.
+    Количество по умолчанию — сколько осталось: так правка цены не добавит монет в объявление."""
+    pref = {k: str(v) for k, v in (d.get("tradingPreferenceSet") or {}).items() if v is not None}
+    pays = [str(t.get("id")) for t in d.get("paymentTerms") or [] if t.get("id") is not None] or \
+        [str(x) for x in d.get("payments") or []]
+    return {
+        "id": str(d.get("id", "")), "priceType": str(d.get("priceType", 0)), "premium": str(d.get("premium") or ""),
+        "price": str(price if price is not None else d.get("price", "")),
+        "minAmount": str(d.get("minAmount", "")), "maxAmount": str(d.get("maxAmount", "")),
+        "remark": d.get("remark") or "", "tradingPreferenceSet": pref, "paymentIds": pays,
+        "actionType": "ACTIVE" if relist else "MODIFY",
+        "quantity": str(quantity if quantity is not None else d.get("lastQuantity", d.get("quantity", ""))),
+        "paymentPeriod": str(d.get("paymentPeriod", 15)),
+    }
 
 
 def level_progress(orders: list[dict], now: float | None = None) -> dict:
@@ -387,6 +426,10 @@ class P2PDesk:
                 if time.time() - self._last_alert_check >= ALERT_EVERY:
                     self._last_alert_check = time.time()
                     self._spread_alerts()
+                    try:
+                        self._ad_alerts()
+                    except Exception as exc:  # подсказки по объявлениям не важнее ордеров
+                        log.warning("p2p ad alerts: %s", exc)
                 self.error = ""
             except Exception as exc:
                 self.error = explain(exc)
@@ -583,8 +626,81 @@ class P2PDesk:
                 ad["rank_pay"] = rank(ad["price"], ad["side"], pool, ad["pay_ids"], skip=ad["id"])
                 best = [a.price for a in pool if a.id != ad["id"] and a.online and set(ad["pay_ids"]) & set(a.payments)]
                 ad["best_rival"] = (min(best) if ad["side"] == "sell" else max(best)) if best else None
+                ad["top_price"] = top_price(ad["side"], ad["best_rival"])
             out.append(ad)
         return sorted(out, key=lambda a: (a["currency"] != currency, not a["online"]))
+
+    # --- ваши объявления: по команде из приложения -----------------------------------
+    def ad_action(self, ad_id: str, action: str, value: float | None = None) -> str:
+        """price — новая цена (не дальше MAX_PRICE_MOVE от лучшего конкурента); quantity — сколько USDT в объявлении;
+        offline — снять с публикации; online — вернуть в выдачу. Монеты, ордера и способы оплаты не трогаем."""
+        d = self.p2p.ad_detail(ad_id)
+        if not d or str(d.get("id")) != str(ad_id):
+            raise ValueError("объявление не найдено")
+        currency, side = d.get("currencyId", ""), "buy" if str(d.get("side")) == "0" else "sell"
+        status = int(_num(d.get("status")))
+        if action == "offline":
+            self.p2p.remove_ad(ad_id)
+            text = "Объявление снято с публикации"
+        elif action == "online":
+            if status == 10:
+                return "Объявление уже в сети"
+            self.p2p.update_ad(update_body(d, relist=True))
+            text = "Объявление снова в выдаче"
+        elif action == "price":
+            if value is None or value <= 0:
+                raise ValueError("цена: положительное число")
+            if int(_num(d.get("priceType"))) != 0:
+                raise ValueError("у объявления плавающая цена — меняйте её в Bybit")
+            self.market(currency)  # свежий стакан — для проверки цены
+            buyers, sellers = self._raw.get(currency, ([], []))
+            pays = [str(t.get("paymentType")) for t in d.get("paymentTerms") or []]
+            rivals = [a.price for a in (sellers if side == "sell" else buyers)
+                      if a.id != str(ad_id) and a.online and (not pays or set(pays) & set(a.payments))]
+            if not rivals:
+                raise ValueError("нет данных рынка по вашим банкам — цену меняйте в Bybit")
+            best = min(rivals) if side == "sell" else max(rivals)
+            if abs(value / best - 1) * 100 > MAX_PRICE_MOVE:
+                raise ValueError(f"цена {n(value)} дальше {n(MAX_PRICE_MOVE, 1)}% от лучшего конкурента ({n(best)}) — "
+                                 "похоже на опечатку; если так и задумано, поменяйте в Bybit")
+            self.p2p.update_ad(update_body(d, price=round(value, 2)))
+            text = f"Цена объявления: {n(value)} {currency}"
+        elif action == "quantity":
+            if value is None or value <= 0:
+                raise ValueError("количество: положительное число")
+            self.p2p.update_ad(update_body(d, quantity=round(value, 4)))
+            text = f"В объявлении: {n(value)} {d.get('tokenId', TOKEN)}"
+        else:
+            raise ValueError("действие: price, quantity, offline или online")
+        self._cache.pop(currency, None)
+        self.store.log(f"P2P: {text}")
+        return text
+
+    def _ad_alerts(self) -> None:
+        """Раз в 5 минут: вас обогнали в выдаче (были первым среди своих банков — стали ниже) и объявление
+        заканчивается. Каждое — один раз, пока не изменится."""
+        ranks: dict = self.store.get("p2p_ad_rank") or {}
+        low: list = self.store.get("p2p_ad_low") or []
+        for c in {str(i.get("currencyId", "")) for i in self.p2p.my_ads()} & set(self.currencies):
+            self.market(c)  # свежий стакан по валютам ваших объявлений — для места в выдаче
+        ads = [a for a in self.my_ads(self.currencies[0]) if a["online"]]
+        for a in ads:
+            r = a.get("rank_pay")
+            if r is not None and ranks.get(a["id"]) == 1 and r > 1:
+                top = f" Стать первым — {n(a['top_price'])}, кнопкой в приложении." if a.get("top_price") else ""
+                self.notify(f"📉 Вас обогнали: объявление на {'продажу' if a['side'] == 'sell' else 'покупку'} по "
+                            f"{n(a['price'])} теперь #{r} среди ваших банков, лучший конкурент {n(a['best_rival'])}.{top}")
+            if r is not None:
+                ranks[a["id"]] = r
+            short = a["total"] and (a["left"] / a["total"] < LOW_LEFT or a["left"] * a["price"] < a["min_amount"])
+            if short and a["id"] not in low:
+                self.notify(f"🪫 Объявление по {n(a['price'])} заканчивается: осталось {n(a['left'])} {a['token']}. "
+                            "Пополните количество в приложении или в Bybit.")
+                low.append(a["id"])
+            elif not short and a["id"] in low:
+                low.remove(a["id"])
+        self.store.set("p2p_ad_rank", {k: v for k, v in ranks.items() if k in {a["id"] for a in ads}})
+        self.store.set("p2p_ad_low", low[-50:])
 
     # --- экран P2P ---------------------------------------------------------------------
     def view(self, currency: str) -> dict:
@@ -609,6 +725,10 @@ class P2PDesk:
 
 def explain(exc: Exception) -> str:
     text = str(exc)
+    if "item/update" in text or "item/cancel" in text:
+        if "permission" in text.lower() or "10005" in text:
+            return ("У ключа P2P нет права менять объявления: на Bybit в настройках ключа включите в разделе P2P "
+                    f"«Объявления» на изменение (ордера можно оставить только на чтение). Ответ Bybit: {text[:200]}")
     if "403" in text or "permission" in text.lower() or "advertiser" in text.lower():
         return ("Bybit не дал доступ к P2P API. Он открыт только рекламодателям (General Advertiser и выше), "
                 f"и у ключа должны быть права P2P. Ответ Bybit: {text[:200]}")
