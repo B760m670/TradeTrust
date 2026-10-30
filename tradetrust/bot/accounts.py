@@ -52,8 +52,9 @@ class Accounts:
     def __init__(self, main: Bot, real: Bot | None = None, real_error: str = "", futures: Bot | None = None,
                  show_demo: bool = True):
         """real_error — почему реальный счёт задан в .env, но не подключился (ключ не прошёл проверку);
-        futures — раздел «Фьючерсы» основного счёта; show_demo=False — когда подключён реальный счёт, демо
-        и фьючерсы (тоже демо) скрыты: не видны в приложении и в Telegram, бот на них не торгует."""
+        futures — раздел «Фьючерсы» основного счёта; show_demo=False — когда подключён реальный счёт, демо и фьючерсы
+        не используются: их нет в приложении и в Telegram, бот на них не торгует (основной остаётся только для
+        общих данных и настроек)."""
         self.main, self.real, self.real_error, self.futures = main, real, real_error, futures
         self.show_demo = show_demo or real is None
         self.p2p = None  # P2P владельца (P2PDesk), если включён — к счетам не относится

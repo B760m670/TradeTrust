@@ -112,7 +112,7 @@ def build(cfg: Config) -> tuple[Accounts, Users | None]:
     futures = connect_futures(cfg, notifier)
     if futures is not None and cfg.env != "mainnet":
         futures.market = market
-    accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures, show_demo=cfg.owner_demo)
+    accounts = Accounts(bot, *connect_real(cfg, notifier), futures=futures, show_demo=False)
     # необязательные разделы: их сбой не должен ронять бота (иначе мини-приложение — серый экран)
     try:
         accounts.p2p = connect_p2p(cfg, notifier, store)
@@ -207,7 +207,7 @@ def main() -> None:
     else:  # демо скрыто: в приложении только реальный счёт и P2P
         p2p = "\n🤝 P2P подключён" if accounts.p2p else ""
         bot.notify(f"🤖 TradeTrust запущен: реальный счёт Bybit{', только просмотр' if accounts.real.cfg.read_only else ''}"
-                   f"{p2p}{demo}.\nДемо-счёт скрыт (вернуть — OWNER_DEMO=1 в .env).\n/help — команды")
+                   f"{p2p}{demo}.\n/help — команды")
 
     errors = OwnerErrors()
     p2p_error = ""

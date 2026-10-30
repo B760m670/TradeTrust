@@ -146,7 +146,7 @@ export interface Accounts {
   /** ключ реального счёта задан в .env (даже если не подключился) */
   real_configured: boolean;
   real_error: string;
-  /** демо скрыто: подключён реальный счёт, в приложении только он и P2P (вернуть — OWNER_DEMO=1) */
+  /** подключён реальный счёт: в приложении только он и P2P, демо нет */
   demo_hidden?: boolean;
 }
 
