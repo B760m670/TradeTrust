@@ -10,7 +10,7 @@ import pytest
 from tradetrust.bot import api
 from tradetrust.bot import p2p as p2pmod
 from tradetrust.bot.bybit import BybitClient
-from tradetrust.bot.p2p import P2PClient, P2PDesk, fits, parse_ad, spread, stats
+from tradetrust.bot.p2p import P2PClient, P2PDesk, fits, parse_ad, spread, stats, taker_cycle
 from tradetrust.bot.store import Store
 
 from test_bot import FakeResponse, init_data, make_bot  # noqa: F401 — фикстура
@@ -83,6 +83,32 @@ def test_filters_and_spread_math():
     s = spread(82.0, 83.0, fee_buy=0.3, fee_sell=0.0, extra=0.05)
     assert s["gross_pct"] == pytest.approx((83 / 82 - 1) * 100) and s["costs_pct"] == pytest.approx(0.35)
     assert s["maker_pct"] == pytest.approx(s["gross_pct"] - 0.35) and s["taker_pct"] < 0
+
+
+def test_taker_cycle_skips_outliers_and_unreliable():
+    ads = lambda rows, side: [parse_ad(ad(*r[:2], side, **r[2])) for r in rows]  # noqa: E731
+    bids = ads([("x", 98.5, {}), ("y", 86.0, {"orders": 30}), ("b1", 85.2, {}), ("b2", 85.0, {}), ("b3", 84.9, {}),
+                ("b4", 84.5, {})], "0")
+    asks = ads([("s0", 82.0, {"rate": 80}), ("s1", 82.8, {}), ("s2", 83.0, {})], "1")
+    c = taker_cycle(bids, asks)
+    # 98,5 — выброс (третьи лица), 86 — 30 сделок, 82,0 — 80% выполнения: берём 85,2 и 82,8
+    assert (c["sell"], c["buy"], c["outliers"]) == (85.2, 82.8, 1)
+    assert c["pct"] == pytest.approx((85.2 / 82.8 - 1) * 100) and c["verdict"] == "go"
+    assert c["qty"] == 1000 and c["gain_money"] == pytest.approx(2400) and c["gain_qty"] == pytest.approx(1000 * (85.2 / 82.8 - 1))
+    assert taker_cycle(bids, asks, amount=85200)["qty"] == pytest.approx(1000)
+    thin = ads([("b", 84.0, {})], "0")
+    assert taker_cycle(thin, asks)["verdict"] == "thin"            # +1,45%
+    assert taker_cycle(ads([("b", 82.0, {})], "0"), asks)["verdict"] == "skip"
+    assert taker_cycle([], asks)["sell"] is None and taker_cycle([], asks)["verdict"] == "skip"
+
+
+def test_cycle_alert(desk):
+    d, fake, sent = desk
+    fake.buyers = [ad("b1", 85.2, "0"), ad("b4", 85.0, "0")]
+    d.set_prefs("RUB", {"alert_pct": 1.5})
+    d.poll()
+    assert sent and sent[0].startswith("🔁 Чистый круг RUB: +3,15%")  # 85,2 / 82,6 (s2 — сумма не задана)
+    assert "ub1 по 85,20" in sent[0] and "us2 по 82,60" in sent[0] and "+2 600 RUB" in sent[0] and "ФИО" in sent[0]
 
 
 def test_market_uses_your_payments_and_filters(desk):
