@@ -1,7 +1,7 @@
 // P2P владельца-мейкера: ваше объявление (цена, «Стать #1», количество, снять/вернуть), круг «купил → продал»,
 // рынок по вашим банкам, ордера, карты и итоги. Отпускать монеты — только в Bybit, после того как деньги видны в банке.
 import { useEffect, useState } from "react";
-import { api, type P2PAd, type P2PLedger, type P2PMyAd, type P2PNotify, type P2POrder, type P2PPrefs, type P2PView } from "../api";
+import { api, type P2PAd, type P2PCycle, type P2PLedger, type P2PMyAd, type P2PNotify, type P2POrder, type P2PPrefs, type P2PView } from "../api";
 import { Card, Empty, Segmented, Skeleton, Tabs, Tile } from "../components/ui";
 import { compact, pct, price } from "../format";
 import { confirmAction, haptic, prefs as store } from "../telegram";
@@ -81,6 +81,7 @@ export function P2P() {
       )}
       {section === "market" && m && (
         <>
+          {m.cycle && <CleanCycle cycle={m.cycle} currency={cur} />}
           <Spread market={m} currency={cur} />
           <AdCalc market={m} currency={cur} />
           <div className="p2p-books">
@@ -143,6 +144,40 @@ function Level({ data }: { data: P2PView }) {
   );
 }
 
+const VERDICT: Record<P2PCycle["verdict"], [string, string]> = {
+  go: ["Делать круг", "up"], thin: ["На грани", "amber"], skip: ["Пропустить", "down"],
+};
+
+/** Чистый круг тейкером: продать USDT надёжному покупателю, на эти деньги выкупить у надёжного продавца. */
+function CleanCycle({ cycle: c, currency }: { cycle: P2PCycle; currency: string }) {
+  const [label, tone_] = VERDICT[c.verdict];
+  const sign = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`;
+  return (
+    <Card title="Чистый круг" aside={<span className={`p2p-verdict tone-${tone_}`}>{label}</span>}>
+      {c.sell == null || c.buy == null ? (
+        <p className="muted small">Нет надёжных {c.sell == null ? "покупателей" : "продавцов"} по вашим фильтрам.</p>
+      ) : (
+        <>
+          <div className="p2p-cycle">
+            <div><small>1. Продать</small><b className="num">{price(c.sell)}</b>
+              <span className="faint small">{c.sell_nick} · {c.sell_orders} сд. · {c.sell_rate}%</span></div>
+            <div><small>2. Выкупить</small><b className="num">{price(c.buy)}</b>
+              <span className="faint small">{c.buy_nick} · {c.buy_orders} сд. · {c.buy_rate}%</span></div>
+            <div className={c.pct! >= 0 ? "win" : "loss"}><small>С {price(c.qty!)} USDT</small>
+              <b className="num">{sign(c.gain_money!)} {SYMBOL[currency] ?? currency}</b>
+              <span className="faint small">{pp(c.pct!)} · {sign(c.gain_qty!)} USDT</span></div>
+          </div>
+          <p className="muted small p2p-note">
+            Делать — от {pct(c.go_pct)}, на грани — {pct(c.thin_pct)}–{pct(c.go_pct)}. Только покупатели и продавцы от
+            {" "}{c.clean_orders} сделок и {c.clean_rate}% выполнения{c.outliers ? `; ${c.outliers} объявл. с ценой не по рынку отброшено` : ""}.
+            Монеты отпускайте, только когда деньги пришли в банк от человека с ФИО из ордера.
+          </p>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function Spread({ market: m, currency }: { market: NonNullable<P2PView["market"]>; currency: string }) {
   const amount = m.prefs.amount;
   const profit = m.maker_pct != null && amount ? amount * m.maker_pct / 100 : null;
@@ -158,9 +193,9 @@ function Spread({ market: m, currency }: { market: NonNullable<P2PView["market"]
           <span className="faint small">вы продаёте</span></div>
       </div>
       {m.crossed ? (
-        <p className="p2p-warn small">
-          ⚠️ Покупают дороже, чем продают. Так бывает, когда в выборку попали разные способы оплаты или лимиты, —
-          это не прибыль. Выберите в фильтрах только свои банки и сумму сделки.
+        <p className="muted small p2p-note">
+          Покупают дороже, чем продают: свои объявления сейчас в минусе, а круг по чужим — в плюсе (выше, «Чистый
+          круг»). Цены здесь — без отбора выбросов.
         </p>
       ) : (
         <div className="tiles tiles-2">

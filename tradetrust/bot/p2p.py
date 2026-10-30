@@ -52,6 +52,12 @@ DEFAULT_PREFS = {"amount": 0.0, "payments": [], "min_rate": 90, "min_orders": 20
                  "fee_buy_pct": 0.0, "fee_sell_pct": 0.0, "extra_pct": 0.0,
                  # лимиты по способам оплаты: id способа → {"day": сумма, "month": сумма}; общий месячный оборот
                  "limits": {}, "month_cap": 0.0}
+# чистый круг тейкером: продать USDT лучшему надёжному покупателю, выкупить у лучшего надёжного продавца.
+# Надёжный — не меньше CLEAN_RATE% выполнения и CLEAN_ORDERS сделок; цены выше медианы пяти лучших больше чем на
+# OUTLIER_PCT — выбросы (платят за «третьих лиц», пополнение телефона, наличные), их не берём
+CLEAN_RATE, CLEAN_ORDERS, OUTLIER_PCT = 95, 100, 2.0
+CYCLE_GO_PCT, CYCLE_THIN_PCT = 1.8, 1.2   # ≥1,8% — делать круг (~1,5 ₽ при 83), 1,2–1,8% — на грани, меньше — пропустить
+CYCLE_QTY = 1000.0                        # USDT в расчёте, если сумма сделки в фильтрах не задана
 RUB_DEFAULTS = {"fee_buy_pct": 0.3, "month_cap": 3_500_000.0}  # порог «систематичности» по 282-ФЗ — по пересказам СМИ
 MSK = timezone(timedelta(hours=3))
 WARN_AT = 0.8  # предупреждать при 80% лимита
@@ -115,6 +121,38 @@ def spread(bid: float | None, ask: float | None, fee_buy: float = 0.0, fee_sell:
     # перекрытый стакан: покупают дороже, чем продают — почти всегда разные способы оплаты или лимиты, а не прибыль
     return {"bid": bid, "ask": ask, "gross_pct": gross, "costs_pct": costs, "maker_pct": gross - costs,
             "taker_pct": (bid / ask - 1) * 100, "crossed": bid > ask}
+
+
+def _clean(ads: list[Ad], side: str) -> tuple[list[Ad], int]:
+    """Надёжные объявления без выбросов по цене, лучшие первыми; второе — сколько выбросов отброшено."""
+    ok = sorted((a for a in ads if a.rate >= CLEAN_RATE and a.orders >= CLEAN_ORDERS),
+                key=lambda a: -a.price if side == "bid" else a.price)
+    ref = reference([a.price for a in ok])
+    if ref is None:
+        return ok, 0
+    limit = ref * (1 + OUTLIER_PCT / 100) if side == "bid" else ref * (1 - OUTLIER_PCT / 100)
+    keep = [a for a in ok if (a.price <= limit if side == "bid" else a.price >= limit)]
+    return keep, len(ok) - len(keep)
+
+
+def taker_cycle(bids: list[Ad], asks: list[Ad], amount: float = 0.0) -> dict:
+    """Чистый круг тейкером: продать USDT лучшему надёжному покупателю (bids), на эти деньги выкупить у лучшего
+    надёжного продавца (asks). Комиссии у тейкера нет. amount — сумма сделки в валюте; без неё считаем на CYCLE_QTY USDT.
+    verdict: go — делать, thin — на грани, skip — пропустить (или некому продать/не у кого купить)."""
+    good_bids, out_b = _clean(bids, "bid")
+    good_asks, out_a = _clean(asks, "ask")
+    base = {"outliers": out_b + out_a, "clean_rate": CLEAN_RATE, "clean_orders": CLEAN_ORDERS,
+            "go_pct": CYCLE_GO_PCT, "thin_pct": CYCLE_THIN_PCT}
+    if not good_bids or not good_asks:
+        return {**base, "sell": None, "buy": None, "pct": None, "verdict": "skip"}
+    b, a = good_bids[0], good_asks[0]
+    qty = amount / b.price if amount else CYCLE_QTY
+    pct = (b.price / a.price - 1) * 100
+    verdict = "go" if pct >= CYCLE_GO_PCT else "thin" if pct >= CYCLE_THIN_PCT else "skip"
+    return {**base, "sell": b.price, "sell_nick": b.nick, "sell_orders": b.orders, "sell_rate": b.rate,
+            "buy": a.price, "buy_nick": a.nick, "buy_orders": a.orders, "buy_rate": a.rate,
+            "gap": b.price - a.price, "pct": pct, "qty": qty, "money": qty * b.price,
+            "gain_qty": qty * (b.price / a.price - 1), "gain_money": qty * (b.price - a.price), "verdict": verdict}
 
 
 class P2PClient:
@@ -428,6 +466,7 @@ class P2PDesk:
             "currency": currency, "prefs": prefs, "updated_at": int(now),
             **spread(bids[0].price if bids else None, asks[0].price if asks else None,
                      prefs["fee_buy_pct"], prefs["fee_sell_pct"], prefs["extra_pct"]),
+            "cycle": taker_cycle(bids, asks, prefs["amount"]),
             "ad_fee_pct": self.fee_pct(currency),  # что Bybit пишет в ваших объявлениях — для сверки
             "bids": [asdict(a) for a in bids[:5]], "asks": [asdict(a) for a in asks[:5]],
             "total": {"bids": len(buyers), "asks": len(sellers)},
@@ -538,12 +577,22 @@ class P2PDesk:
             if not prefs["alert_pct"]:
                 continue
             m = self.market(currency)
-            if m["maker_pct"] is None or m["maker_pct"] < prefs["alert_pct"]:
+            c = m["cycle"]
+            maker_ok = m["maker_pct"] is not None and m["maker_pct"] >= prefs["alert_pct"]
+            cycle_ok = c["pct"] is not None and c["pct"] >= prefs["alert_pct"]
+            if not (maker_ok or cycle_ok):
                 continue
             if time.time() - sent.get(currency, 0) < ALERT_COOLDOWN:
                 continue
-            self.notify(f"📊 Чистый спред {currency}: {n(m['maker_pct'])}% (порог {n(prefs['alert_pct'])}%). Покупают по "
-                        f"{n(m['bid'])}, продают по {n(m['ask'])}; расходы на круг {n(m['costs_pct'])}% учтены.")
+            if cycle_ok and (not maker_ok or c["pct"] > m["maker_pct"]):
+                self.notify(f"🔁 Чистый круг {currency}: +{n(c['pct'])}% (порог {n(prefs['alert_pct'])}%). Продать "
+                            f"{c['sell_nick']} по {n(c['sell'])}, выкупить у {c['buy_nick']} по {n(c['buy'])} — "
+                            f"≈ +{n(c['gain_money'], 0)} {currency} с {n(c['qty'], 0)} USDT. Отпускайте монеты, только "
+                            "когда деньги пришли от человека с ФИО из ордера.")
+            else:
+                self.notify(f"📊 Чистый спред {currency}: {n(m['maker_pct'])}% (порог {n(prefs['alert_pct'])}%). "
+                            f"Покупают по {n(m['bid'])}, продают по {n(m['ask'])}; расходы на круг "
+                            f"{n(m['costs_pct'])}% учтены.")
             sent[currency] = time.time()
         self.store.set("p2p_alerts", sent)
 

@@ -253,6 +253,13 @@ export interface P2POrder {
   currency: string; token: string; who: string; created: number; seconds_left: number;
   buyer_name?: string; seller_name?: string;
 }
+/** Чистый круг тейкером: продать лучшему надёжному покупателю, выкупить у лучшего надёжного продавца. */
+export interface P2PCycle {
+  sell: number | null; buy: number | null; pct: number | null; verdict: "go" | "thin" | "skip";
+  sell_nick?: string; sell_orders?: number; sell_rate?: number; buy_nick?: string; buy_orders?: number; buy_rate?: number;
+  gap?: number; qty?: number; money?: number; gain_qty?: number; gain_money?: number;
+  outliers: number; clean_rate: number; clean_orders: number; go_pct: number; thin_pct: number;
+}
 /** Ваше объявление P2P и его место в выдаче (rank — среди всех, rank_pay — среди тех же способов оплаты). */
 export interface P2PMyAd {
   id: string; side: "buy" | "sell"; token: string; currency: string; price: number; left: number; total: number;
@@ -283,8 +290,9 @@ export interface P2PView {
     currency: string; prefs: P2PPrefs; updated_at: number; bid: number | null; ask: number | null;
     gross_pct: number | null; costs_pct: number; ad_fee_pct: number;
     maker_pct: number | null; taker_pct: number | null; bids: P2PAd[]; asks: P2PAd[];
-    /** покупают дороже, чем продают — разные способы оплаты или лимиты, а не прибыль */
+    /** покупают дороже, чем продают — круг тейкером в плюсе */
     crossed?: boolean;
+    cycle?: P2PCycle;
     total: { bids: number; asks: number }; payments: { id: string; name: string; ads: number; mine: boolean }[];
   };
   pending?: P2POrder[];

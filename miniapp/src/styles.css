@@ -956,6 +956,8 @@ h3.section-title { margin: 22px 0 10px; }
 .p2p-cycle b { font-size: 19px; white-space: nowrap; }
 .p2p-cycle .win { background: var(--up-soft); } .p2p-cycle .win b { color: var(--up); }
 .p2p-cycle .loss { background: var(--down-soft); } .p2p-cycle .loss b { color: var(--down); }
+.p2p-cycle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p2p-verdict { font-size: 13px; font-weight: 700; }
 .p2p-note { margin: 0; }
 .p2p-orders { display: flex; flex-direction: column; }
 .p2p-order { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 10px 0;

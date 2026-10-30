@@ -146,6 +146,12 @@ function P2PCard({ data, onOpen }: { data: P2PView | null; onOpen: () => void })
           {(ad.rank_pay ?? ad.rank) != null && <span className={`home-p2p-place${(ad.rank_pay ?? ad.rank) === 1 ? " top" : ""}`}>#{ad.rank_pay ?? ad.rank}</span>}
         </div>
       ) : <span className="small">Объявлений нет — разместите в Bybit, и оно появится здесь</span>}
+      {data?.market?.cycle?.pct != null && (
+        <span className={`small tone-${data.market.cycle.verdict === "go" ? "up" : data.market.cycle.verdict === "thin" ? "amber" : "down"}`}>
+          Чистый круг {price(data.market.cycle.sell!)} → {price(data.market.cycle.buy!)} · {data.market.cycle.pct >= 0 ? "+" : "−"}
+          {pct(Math.abs(data.market.cycle.pct))} · {data.market.cycle.verdict === "go" ? "делать" : data.market.cycle.verdict === "thin" ? "на грани" : "пропустить"}
+        </span>
+      )}
       {next && <div className="home-p2p-bar"><i style={{ width: `${Math.min(1, lv!.volume_30d / next.volume) * 100}%` }} /></div>}
       {paid.length > 0 ? (
         <span className="home-p2p-alert">💰 Покупатель отметил оплату · {compact(paid[0].amount)} {SYMBOL[paid[0].currency] ?? paid[0].currency} — проверьте банк</span>
