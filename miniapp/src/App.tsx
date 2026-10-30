@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { AccountButton } from "./components/Account";
-import { BotState, ModeSwitch, PauseButton, type Act } from "./components/BotControls";
+import type { Act } from "./components/BotControls";
 import { AlertIcon, CloseIcon, HomeIcon, TrendIcon, WalletIcon, CandleIcon } from "./components/icons";
 import { Empty, Logo, Skeleton, Toast } from "./components/ui";
 import type { Status } from "./api";
@@ -11,7 +11,6 @@ import { Admin } from "./screens/Admin";
 import { Assets } from "./screens/Assets";
 import { Home } from "./screens/Home";
 import { Markets } from "./screens/Markets";
-import { Overview } from "./screens/Overview";
 import { MyExchanges } from "./screens/MyExchanges";
 import { P2P } from "./screens/P2P";
 import { Settings } from "./screens/Settings";
@@ -22,7 +21,7 @@ import { useBot } from "./useBot";
 
 // Как у бирж: Главная · Рынки · Торговать · Активы. Бот и настройки — страницы поверх вкладок.
 export type Tab = "home" | "markets" | "trade" | "assets";
-type Page = "bot" | "bot-settings" | "settings" | "p2p" | "exchanges";
+type Page = "settings" | "p2p" | "exchanges";
 
 const TABS: { id: Tab; text: string; icon: ReactNode }[] = [
   { id: "home", text: "Главная", icon: <HomeIcon /> },
@@ -52,12 +51,8 @@ function Sidebar({ tab, onTab, status, busy, act, inCoin }: {
       <div className="grow" />
       {status && (
         <div className="side-controls">
-          <span className="eyebrow">Режим</span>
-          <ModeSwitch status={status} busy={busy} act={act} />
-          <BotState status={status} />
           <div className="side-row">
             <AccountButton status={status} busy={busy} act={act} />
-            <PauseButton status={status} busy={busy} act={act} />
           </div>
         </div>
       )}
@@ -119,7 +114,7 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
   useEffect(() => {
     const button = tg?.BackButton;
     if (!button) return;
-    const back = () => setPage(page === "bot-settings" ? "bot" : null);
+    const back = () => setPage(null);
     if (page) {
       button.show();
       button.onClick(back);
@@ -155,11 +150,6 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
       : <Loading />;
   } else if (ADMIN_PAGE) {
     body = status.admin ? <Admin /> : <Empty title="Нет доступа">Админка доступна только владельцу бота.</Empty>;
-  } else if (page === "bot") {
-    body = <Overview status={status} busy={busy} act={act} wide={wide} onOpenCoin={openCoin} onTab={openTab}
-      onSettings={() => openPage("bot-settings")} />;
-  } else if (page === "bot-settings") {
-    body = <Settings status={status} busy={busy} act={act} scope="bot" />;
   } else if (page === "exchanges") {
     body = <MyExchanges />;
   } else if (page === "p2p") {
@@ -174,7 +164,7 @@ function Screens({ status: botStatus, error, busy, message, clearMessage, act }:
     body = <Assets status={status} />;
   } else {
     body = <Home status={status} busy={busy} act={act} onOpenCoin={openCoin} onTab={openTab}
-      onBot={() => openPage("bot")} onSettings={() => openPage("settings")} onP2P={() => openPage("p2p")}
+      onSettings={() => openPage("settings")} onP2P={() => openPage("p2p")}
       onExchanges={() => openPage("exchanges")} />;
   }
 

@@ -990,3 +990,26 @@ h3.section-title { margin: 22px 0 10px; }
 .p2p-more[open] > summary::after { content: "▴"; }
 .p2p-more .p2p-filters { border: 0; box-shadow: none; margin: 0; padding-top: 0; background: transparent; }
 .p2p-more .p2p-filters > .card-head { display: none; }
+
+/* главная: P2P сразу под балансом, биржи коротко */
+.home-p2p { display: flex; flex-direction: column; gap: 10px; width: 100%; margin: 4px 0 12px; padding: 16px; border: 0;
+  border-radius: 22px; background: var(--brand); color: var(--on-brand); text-align: left; cursor: pointer; }
+.home-p2p .small { color: rgba(255, 255, 255, 0.85); }
+.home-p2p-head { display: flex; justify-content: space-between; align-items: center; }
+.home-p2p-ad { display: flex; align-items: center; gap: 12px; }
+.home-p2p-ad > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.home-p2p-ad b { font-size: 26px; font-weight: 800; }
+.home-p2p-place { margin-left: auto; padding: 6px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.18); font-size: 18px; font-weight: 800; }
+.home-p2p-place.top { background: #fff; color: #047857; }
+.home-p2p-bar { height: 6px; border-radius: 9px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
+.home-p2p-bar i { display: block; height: 100%; border-radius: inherit; background: #fff; }
+.home-p2p-alert { padding: 10px 12px; border-radius: 14px; background: #fbbf24; color: #1f1500; font-size: 13px; font-weight: 700; }
+.home-ex { gap: 10px; margin-top: 12px; }
+.home-ex-main { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit;
+  text-align: left; cursor: pointer; }
+.home-ex-main .row-main b { font-size: 22px; }
+.home-ex-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.home-ex-list span { display: inline-flex; gap: 6px; align-items: baseline; padding: 6px 10px; border-radius: 12px; background: var(--inset);
+  font-size: 12px; color: var(--muted); }
+.home-ex-list b { color: var(--text); font-size: 13px; }
+.home-ex-list span.off b { color: var(--down); }

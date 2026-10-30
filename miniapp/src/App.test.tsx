@@ -139,7 +139,6 @@ afterEach(() => {
   delete window.Telegram;
 });
 
-const openBot = async () => fireEvent.click(await screen.findByRole("button", { name: /Трендовый бот/ }));
 
 async function renderApp(initData = "query_id=1&hash=abc", wide = false) {
   installTelegram(initData);
@@ -153,38 +152,6 @@ describe("mini app", () => {
     await renderApp("");
     expect(screen.getByText(/Откройте приложение через своего Telegram-бота/)).toBeTruthy();
     expect(calls).toHaveLength(0);
-  });
-
-  it("shows the account, pending trade and positions from the bot", async () => {
-    await renderApp();
-    await screen.findByText("Вход ETH");
-    expect(calls[0]).toEqual({ url: "/api/status", method: "GET", auth: "tma query_id=1&hash=abc" });
-    expect(screen.getAllByText("ДЕМО").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("SOL").length).toBeGreaterThan(0);
-    expect(document.documentElement.dataset.theme).toBe("dark"); // «Авто» — как в Telegram
-    expect(screen.getByText("Стоп 80,77")).toBeTruthy();
-    expect(screen.getByText("Торговые боты")).toBeTruthy();
-    expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenCalledWith("#08090C");
-    await openBot();
-    expect(await screen.findByRole("radio", { name: "Вручную", checked: true })).toBeTruthy();
-  });
-
-  it("asks before switching to auto mode", async () => {
-    await renderApp();
-    await openBot();
-    fireEvent.click(await screen.findByRole("radio", { name: "Авто" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")!.url).toBe("/api/mode");
-  });
-
-  it("confirms a trade with one tap", async () => {
-    await renderApp();
-    fireEvent.click((await screen.findAllByRole("button", { name: "Купить" })).at(-1)!);
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    const post = calls.find((c) => c.method === "POST")!;
-    expect(post.url).toBe(`/api/proposals/${status.proposals[0].id}/confirm`);
-    expect(post.auth).toBe("tma query_id=1&hash=abc");
-    await screen.findByText("✅ Куплено");
   });
 
   it("opens a pair from markets and the history in assets", async () => {
@@ -222,7 +189,7 @@ describe("mini app", () => {
     Object.assign(status, { p2p: true });
     try {
       await renderApp();
-      fireEvent.click(await screen.findByRole("button", { name: /P2P · USDT/ }));
+      fireEvent.click(await screen.findByRole("button", { name: "P2P" }));
       expect(await screen.findByText("Моё объявление · продажа")).toBeTruthy(); // вкладка «Мейкер» — первая
       expect(screen.getByText(/До уровня «Регулярный»/)).toBeTruthy();
       expect(screen.getByText(/Покупатель отметил оплату/)).toBeTruthy();
@@ -249,11 +216,11 @@ describe("mini app", () => {
     }
   });
 
-  it("read-only real account: no trade buttons and bot card, P2P up front", async () => {
+  it("read-only real account: no trade buttons, P2P up front", async () => {
     Object.assign(status, { p2p: true, read_only: true });
     try {
       await renderApp();
-      expect(await screen.findByText(/P2P · USDT/)).toBeTruthy();
+      expect(await screen.findByText(/P2P · мейкер/)).toBeTruthy(); // карточка P2P — сразу под балансом
       expect(screen.queryByText("Торговые боты")).toBeNull();
       const quick = document.querySelector(".quick")!;
       expect(quick.textContent).toContain("P2P");
@@ -279,7 +246,7 @@ describe("mini app", () => {
     Object.assign(status, { exchanges: true });
     try {
       await renderApp();
-      fireEvent.click(await screen.findByRole("button", { name: /Bybit · Binance · OKX · KuCoin/ }));
+      fireEvent.click(await screen.findByRole("button", { name: "Биржи" }));
       expect(await screen.findByText(/право торговли \(trade\)/)).toBeTruthy();
       expect(screen.getByText("OKX: вывод закрыт")).toBeTruthy();
     } finally {
@@ -299,7 +266,7 @@ describe("mini app", () => {
 
   it("uses a sidebar and shows a chart on a wide screen", async () => {
     await renderApp(undefined, true);
-    await screen.findByText("Вход ETH");
+    await screen.findByText("Баланс Bybit · USD");
     expect(document.querySelector(".sidebar")).toBeTruthy();
     expect(document.querySelector(".bottom-nav")).toBeNull();
     const nav = within(document.querySelector(".side-nav") as HTMLElement);
@@ -330,30 +297,6 @@ describe("mini app", () => {
     expect(window.Telegram!.WebApp.setHeaderColor).toHaveBeenLastCalledWith("#F3F4F7");
   });
 
-  it("explains that new entries wait while bitcoin is below its average", async () => {
-    const scan = status.last_scan;
-    Object.assign(status, { last_scan: { ...scan, held_back: ["SOL"], btc: { ok: false, days: 50, price: 60000, avg: 65000 } } });
-    try {
-      await renderApp();
-      await openBot();
-      expect(await screen.findByText(/Биткоин ниже 50-дневной средней/)).toBeTruthy();
-      expect(screen.getByText(/Пропущены сигналы: SOL/)).toBeTruthy();
-    } finally {
-      Object.assign(status, { last_scan: scan });
-    }
-  });
-
-  it("tells a demo user that the account is virtual", async () => {
-    Object.assign(status, { account: "demo" });
-    try {
-      await renderApp();
-      expect(await screen.findByText("Это ваш демо-счёт")).toBeTruthy();
-      expect(screen.getAllByText("ДЕМО").length).toBeGreaterThan(0);
-    } finally {
-      Object.assign(status, { account: "owner" });
-    }
-  });
-
   it("switches the owner between the demo and the real account", async () => {
     const accounts = { active: "main", real_configured: true, real_error: "", list: [
       { id: "main", label: "Демо-счёт Bybit", env: "demo", real: false },
@@ -369,9 +312,6 @@ describe("mini app", () => {
       expect(sheet.getAllByText(/настоящие деньги/).length).toBeGreaterThan(0);
       fireEvent.click(sheet.getByRole("button", { name: "Перейти на реальный" }));
       await waitFor(() => expect(calls.find((c) => c.url === "/api/account")?.body).toEqual({ account: "real" }));
-      // каждое действие говорит серверу, какой счёт на экране, — на другом счёте оно не выполнится
-      fireEvent.click((await screen.findAllByRole("button", { name: "Купить" })).at(-1)!);
-      await waitFor(() => expect(calls.find((c) => c.url.includes("/confirm"))?.account).toBe("main"));
     } finally {
       Object.assign(status, { accounts: undefined });
     }
@@ -394,26 +334,10 @@ describe("mini app", () => {
     }
   });
 
-  it("explains how to connect a real account and lets the owner turn the bot on", async () => {
-    Object.assign(status, { enabled: false, accounts: { active: "main", real_configured: false, real_error: "",
-      list: [{ id: "main", label: "Демо-счёт Bybit", env: "demo", real: false }] } });
-    try {
-      await renderApp();
-      expect(await screen.findByText("ВЫКЛ")).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Включить" }));
-      await waitFor(() => expect(calls.find((c) => c.url === "/api/bot")?.body).toEqual({ enabled: true }));
-      fireEvent.click(screen.getByRole("radio", { name: "РЕАЛЬНЫЙ" }));
-      expect(await screen.findByText("Реальный счёт не подключён")).toBeTruthy();
-      expect(screen.getByText("BYBIT_REAL_API_KEY")).toBeTruthy();
-    } finally {
-      Object.assign(status, { enabled: undefined, accounts: undefined });
-    }
-  });
-
   it("opens the admin panel only from the Telegram button and only for the owner", async () => {
     Object.assign(status, { admin: true });
     await renderApp();
-    await screen.findByText("Торговые боты");
+    await screen.findByText("Баланс Bybit · USD");
     expect(screen.queryByRole("button", { name: "Админ" })).toBeNull();   // в приложении админки нет
     cleanup();
     vi.resetModules();
@@ -446,57 +370,12 @@ describe("mini app", () => {
     }
   });
 
-  it("saves only the changed settings after confirmation", async () => {
-    await renderApp();
-    await openBot();
-    fireEvent.click(await screen.findByRole("button", { name: "Настройки бота" }));
-    const risk = await screen.findByRole("group", { name: "Риск на сделку" });
-    fireEvent.click(within(risk).getByRole("button", { name: "Больше" }));
-    expect(within(risk).getByText("1,25%")).toBeTruthy();
-    fireEvent.click(screen.getByRole("switch", { name: "Пауза, когда BTC падает" }));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    const post = calls.find((c) => c.method === "POST")!;
-    expect(post.url).toBe("/api/settings");
-    expect(post.body).toEqual({ risk_pct: 1.25, btc_filter: true });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull());
-  });
-
-  it("will not save an empty coin list", async () => {
-    await renderApp();
-    await openBot();
-    fireEvent.click(await screen.findByRole("button", { name: "Настройки бота" }));
-    fireEvent.click(await screen.findByText("Снять все"));
-    expect(screen.getByText("Выберите хотя бы одну монету.")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Сохранить" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("streams live prices from the exchange into positions and equity", async () => {
-    await renderApp();
-    await screen.findByText("Вход ETH");
-    await waitFor(() => expect(FakeWebSocket.last?.readyState).toBe(1));
-    const ws = FakeWebSocket.last!;
-    expect(ws.url).toBe("wss://stream.bybit.com/v5/public/spot");
-    expect(ws.sent.flatMap((m) => m.args ?? [])).toContain("tickers.SOLUSDT");
-    const pos = status.positions[0];
-    act(() => ws.push("tickers.SOLUSDT", { lastPrice: String(pos.entry + 10), price24hPcnt: "0.05" }));
-    const pnl = (10 * pos.qty).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    await screen.findByText(`+${pnl} $`, {}, { timeout: 2000 });
-    expect(screen.getByText("онлайн")).toBeTruthy();
-  });
-
-  it("shows the equity chart and daily summary settings", async () => {
+  it("shows the equity chart in the history", async () => {
     await renderApp();
     fireEvent.click(await screen.findByRole("button", { name: "Активы" }));
     fireEvent.click(await screen.findByRole("tab", { name: "История" }));
     await screen.findByText("Худшая просадка");
     expect(screen.getByTestId("equity-chart")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Главная" }));
-    await openBot();
-    fireEvent.click(await screen.findByRole("button", { name: "Настройки бота" }));
-    fireEvent.click(await screen.findByRole("switch", { name: "Ежедневная сводка" }));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
-    await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ daily_report: false }));
   });
 
   it("shows the whole account in the portfolio with live prices", async () => {
@@ -510,12 +389,5 @@ describe("mini app", () => {
     act(() => FakeWebSocket.last!.push("tickers.TONUSDT", { lastPrice: "10", price24hPcnt: "1" }));
     await screen.findByText("100,00 $", {}, { timeout: 2000 }); // 10 TON × 10 $
     expect(screen.getByText("+50,00 $ · +3,3%")).toBeTruthy(); // TON удвоился: +50 $ к прежним 1500 $
-  });
-
-  it("shows when the bot last checked the market", async () => {
-    await renderApp();
-    await openBot();
-    await screen.findByText(/Бот проверил рынок в/);
-    expect(screen.getByText(/следующая в/)).toBeTruthy();
   });
 });

@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import statistics
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -208,6 +209,23 @@ def rank(price: float, side: str, ads: list[Ad], pays: list[str] | None = None, 
     return len(better) + 1
 
 
+def rivals(ads: list[Ad], side: str, pays: list[str], lo: float, hi: float, skip: str = "",
+           min_rate: int = 90, min_orders: int = 20) -> list[Ad]:
+    """Настоящие конкуренты объявления, лучшие первыми: в сети, с вашими способами оплаты, с пересекающимися лимитами
+    сделки и надёжные (выполнение и число сделок). Без этого «лучшим» оказывается объявление на 500 ₽ или от
+    новичка с ценой не по рынку."""
+    out = [a for a in ads if a.id != skip and a.online and a.price > 0 and (not pays or set(pays) & set(a.payments))
+           and a.rate >= min_rate and a.orders >= min_orders
+           and (not hi or a.min_amount <= hi) and (not lo or (a.max_amount >= lo and a.quantity * a.price >= lo))]
+    return sorted(out, key=lambda a: a.price if side == "sell" else -a.price)
+
+
+def reference(prices: list[float]) -> float | None:
+    """Опорная цена рынка — медиана пяти лучших конкурентов: одно объявление-выброс её не сдвигает."""
+    top = prices[:5]
+    return statistics.median(top) if top else None
+
+
 def top_price(side: str, best_rival: float | None) -> float | None:
     """Цена, с которой объявление станет первым: на копейку лучше лучшего конкурента с теми же банками."""
     if best_rival is None:
@@ -217,7 +235,8 @@ def top_price(side: str, best_rival: float | None) -> float | None:
 
 def update_body(d: dict, *, price: float | None = None, quantity: float | None = None, relist: bool = False) -> dict:
     """Тело запроса на изменение объявления из его текущих данных (/item/info): Bybit требует все поля.
-    Количество по умолчанию — сколько осталось: так правка цены не добавит монет в объявление."""
+    quantity у Bybit — всё количество объявления, вместе с уже проданным и замороженным в ордерах; поэтому
+    по умолчанию отправляем его без изменений, а quantity здесь — сколько должно ОСТАТЬСЯ в продаже."""
     pref = {k: str(v) for k, v in (d.get("tradingPreferenceSet") or {}).items() if v is not None}
     pays = [str(t.get("id")) for t in d.get("paymentTerms") or [] if t.get("id") is not None] or \
         [str(x) for x in d.get("payments") or []]
@@ -227,9 +246,19 @@ def update_body(d: dict, *, price: float | None = None, quantity: float | None =
         "minAmount": str(d.get("minAmount", "")), "maxAmount": str(d.get("maxAmount", "")),
         "remark": d.get("remark") or "", "tradingPreferenceSet": pref, "paymentIds": pays,
         "actionType": "ACTIVE" if relist else "MODIFY",
-        "quantity": str(quantity if quantity is not None else d.get("lastQuantity", d.get("quantity", ""))),
+        "quantity": str(_qty(d, quantity)),
         "paymentPeriod": str(d.get("paymentPeriod", 15)),
     }
+
+
+def _qty(d: dict, left: float | None) -> str:
+    """Всё количество объявления для запроса: без изменений — как есть; иначе — нужный остаток плюс уже
+    использованное (продано и заморожено в ордерах = всё − остаток)."""
+    total = _num(d.get("quantity"))
+    if left is None:
+        return str(d.get("quantity", ""))
+    used = max(0.0, total - _num(d.get("lastQuantity", total)))
+    return f"{round(left + used, 4):g}"
 
 
 def level_progress(orders: list[dict], now: float | None = None) -> dict:
@@ -623,9 +652,10 @@ class P2PDesk:
             pool = sellers if ad["side"] == "sell" else buyers
             if pool:
                 ad["rank"] = rank(ad["price"], ad["side"], pool, skip=ad["id"])
-                ad["rank_pay"] = rank(ad["price"], ad["side"], pool, ad["pay_ids"], skip=ad["id"])
-                best = [a.price for a in pool if a.id != ad["id"] and a.online and set(ad["pay_ids"]) & set(a.payments)]
-                ad["best_rival"] = (min(best) if ad["side"] == "sell" else max(best)) if best else None
+                real = rivals(pool, ad["side"], ad["pay_ids"], ad["min_amount"], ad["max_amount"], skip=ad["id"])
+                ad["rank_pay"] = rank(ad["price"], ad["side"], real)
+                ad["best_rival"] = real[0].price if real else None
+                ad["rivals"] = len(real)
                 ad["top_price"] = top_price(ad["side"], ad["best_rival"])
             out.append(ad)
         return sorted(out, key=lambda a: (a["currency"] != currency, not a["online"]))
@@ -655,14 +685,15 @@ class P2PDesk:
             self.market(currency)  # свежий стакан — для проверки цены
             buyers, sellers = self._raw.get(currency, ([], []))
             pays = [str(t.get("paymentType")) for t in d.get("paymentTerms") or []]
-            rivals = [a.price for a in (sellers if side == "sell" else buyers)
-                      if a.id != str(ad_id) and a.online and (not pays or set(pays) & set(a.payments))]
-            if not rivals:
+            pool = sellers if side == "sell" else buyers
+            real = rivals(pool, side, pays, _num(d.get("minAmount")), _num(d.get("maxAmount")), skip=str(ad_id))
+            ref = reference([a.price for a in real]) or reference([a.price for a in rivals(pool, side, pays, 0, 0,
+                                                                                            skip=str(ad_id))])
+            if ref is None:
                 raise ValueError("нет данных рынка по вашим банкам — цену меняйте в Bybit")
-            best = min(rivals) if side == "sell" else max(rivals)
-            if abs(value / best - 1) * 100 > MAX_PRICE_MOVE:
-                raise ValueError(f"цена {n(value)} дальше {n(MAX_PRICE_MOVE, 1)}% от лучшего конкурента ({n(best)}) — "
-                                 "похоже на опечатку; если так и задумано, поменяйте в Bybit")
+            if abs(value / ref - 1) * 100 > MAX_PRICE_MOVE:
+                raise ValueError(f"цена {n(value)} дальше {n(MAX_PRICE_MOVE, 1)}% от рынка ({n(ref)} — середина пяти лучших "
+                                 "конкурентов) — похоже на опечатку; если так и задумано, поменяйте в Bybit")
             self.p2p.update_ad(update_body(d, price=round(value, 2)))
             text = f"Цена объявления: {n(value)} {currency}"
         elif action == "quantity":
