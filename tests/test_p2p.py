@@ -239,8 +239,8 @@ def test_my_ads_rank_and_level_progress(desk):
                 "quantity": "995", "executedQuantity": "95", "minAmount": "5000", "maxAmount": "30000", "status": 10,
                 "paymentTerms": [{"paymentType": 75}], "feeRate": "0.003"}]
     ad = d.my_ads("RUB")[0]
-    # продавцы дешевле 82,8: s2 (82,6, тот же Tinkoff); s3 не в сети — не считается
-    assert ad["side"] == "sell" and ad["rank"] == 2 and ad["rank_pay"] == 2 and ad["best_rival"] == 82.6
+    # среди всех дешевле только s2 (82,6), но его лимит до 3 000 ₽ — не конкурент вашему 5–30 тыс.: среди настоящих вы первый
+    assert ad["side"] == "sell" and ad["rank"] == 2 and ad["rank_pay"] == 1 and ad["best_rival"] == 83.1
     assert ad["payments"] == ["Tinkoff"] and ad["fee_pct"] == 0.3 and ad["online"]
     now = time.time()
     orders = [order(str(i), 50, amount=8300, price=83, createDate=str(int(now * 1000) - i), targetUserId=f"u{i % 6}")
@@ -258,15 +258,17 @@ MY_AD = {"id": "m1", "side": 1, "tokenId": "USDT", "currencyId": "RUB", "priceTy
 def test_ad_actions_send_full_body_and_guard_price(desk):
     d, fake, _ = desk
     fake.ad = dict(MY_AD)
-    assert d.ad_action("m1", "price", 82.59) == "Цена объявления: 82,59 RUB"  # лучший с Tinkoff — s2 по 82,6
+    # опора — середина лучших настоящих конкурентов (s1 83,1 и s4 83,4; s2 с лимитом до 3 000 ₽ не конкурент)
+    assert d.ad_action("m1", "price", 82.59) == "Цена объявления: 82,59 RUB"
     path, body = [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1]
-    assert body["actionType"] == "MODIFY" and body["price"] == "82.59" and body["quantity"] == "900"
+    # quantity у Bybit — всё объявление: при смене цены не трогаем, иначе остаток урежется на проданное
+    assert body["actionType"] == "MODIFY" and body["price"] == "82.59" and body["quantity"] == "995"
     assert body["paymentIds"] == ["7110"] and body["remark"] == "только 1-е лицо" and body["id"] == "m1"
     assert body["tradingPreferenceSet"] == {"isKyc": "1", "hasCompleteRateDay30": "1", "completeRateDay30": "90"}
     with pytest.raises(ValueError, match="опечатку"):
-        d.ad_action("m1", "price", 85.0)  # +2,9% от лучшего конкурента
-    d.ad_action("m1", "quantity", 500)
-    assert [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1][1]["quantity"] == "500"
+        d.ad_action("m1", "price", 85.0)  # +2,1% от опорной цены
+    d.ad_action("m1", "quantity", 500)  # оставить в продаже 500: + уже использованные 95 (995 − 900)
+    assert [c for c in fake.calls if c[0] == "/v5/p2p/item/update"][-1][1]["quantity"] == "595"
     d.ad_action("m1", "offline")
     assert fake.calls[-1] == ("/v5/p2p/item/cancel", {"itemId": "m1"})
     fake.ad["status"] = 20

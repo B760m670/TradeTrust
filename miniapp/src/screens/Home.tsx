@@ -1,19 +1,18 @@
-import type { CSSProperties } from "react";
-import type { Status } from "../api";
+import { useEffect, useState, type CSSProperties } from "react";
+import { api, type MyExchanges, type P2PView, type Status } from "../api";
 import type { Tab } from "../App";
 import { AccountSegment } from "../components/Account";
-import { BotPowerButton, BotState, PauseButton, type Act } from "../components/BotControls";
-import { BookIcon, BotIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, TrendIcon, WalletIcon } from "../components/icons";
+import type { Act } from "../components/BotControls";
+import { BookIcon, BuyIcon, ChevronIcon, GearIcon, SellIcon, WalletIcon } from "../components/icons";
 import { BigMoney, Card, CoinAvatar, Flash, LiveBadge, Logo, Skeleton } from "../components/ui";
-import { pct, price, tone, usd } from "../format";
+import { compact, pct, price, tone, usd } from "../format";
 import { useTickers } from "../live";
 import { dayChange } from "../logic";
-import { PositionCard, ProposalCard } from "./Overview";
 import { usePortfolio, withLive } from "./Portfolio";
 
-const MODE_TAG = { signals: "СИГНАЛЫ", confirm: "ВРУЧНУЮ", auto: "АВТО" } as const;
 const arrow = (x: number) => (x >= 0 ? "▲ " : "▼ ");
 const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
+const SYMBOL: Record<string, string> = { RUB: "₽", USD: "$", EUR: "€", KZT: "₸" };
 
 interface Props {
   status: Status;
@@ -21,30 +20,36 @@ interface Props {
   act: Act;
   onOpenCoin: (coin: string) => void;
   onTab: (tab: Tab) => void;
-  onBot: () => void;
   onSettings: () => void;
   onP2P?: () => void;
   onExchanges?: () => void;
 }
 
-/** Главная, как у бирж: баланс всего счёта, торговые боты карточками, что ждёт решения, рынок за сутки. */
-export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSettings, onP2P, onExchanges }: Props) {
+/** Данные для главной раз в полминуты, пока экран открыт. */
+function usePoll<T>(load: (() => Promise<T>) | null, every = 30_000) {
+  const [data, setData] = useState<T | null>(null);
+  useEffect(() => {
+    if (!load) return;
+    let alive = true;
+    const run = () => load().then((d) => alive && setData(d), () => undefined);
+    void run();
+    const t = setInterval(() => document.visibilityState === "visible" && void run(), every);
+    return () => { alive = false; clearInterval(t); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return data;
+}
+
+/** Главная: баланс реального счёта, сразу под ним P2P (объявление, ордера, уровень), биржи и рынок за сутки. */
+export function Home({ status: s, busy, act, onOpenCoin, onTab, onSettings, onP2P, onExchanges }: Props) {
   const { data } = usePortfolio();
   const tickers = useTickers(s.all_coins);
+  const p2p = usePoll<P2PView>(s.p2p ? () => api.p2p() : null);
+  const exchanges = usePoll<MyExchanges>(s.exchanges ? () => api.exchanges() : null, 60_000);
   const assets = data ? withLive(data.assets, tickers) : [];
   const total = data ? assets.reduce((sum, a) => sum + (a.value ?? 0), 0) : null;
   const day = data ? dayChange(assets, Object.fromEntries(Object.entries(tickers).map(([c, t]) => [c, t.change24h]))) : null;
-  const realized = s.trades.reduce((sum, t) => sum + t.pnl_usdt, 0);
-  const botPnl = realized + s.equity.unrealized;
   const movers = Object.entries(tickers).sort((a, b) => Math.abs(b[1].change24h) - Math.abs(a[1].change24h)).slice(0, 5);
-
   const tape = s.all_coins.slice(0, 12).filter((c) => tickers[c]);
-  const entries = Object.entries(s.signals)
-    .filter(([c, g]) => g.cross_up && g.regime_ok && g.trend_ok !== false && !s.positions.some((p) => p.coin === c))
-    .map(([c]) => c).slice(0, 3);
-  const real = s.env === "mainnet";
-  // ключ реального счёта только для чтения: сделок и бота здесь нет — только баланс, активы и P2P
-  const viewOnly = !!s.read_only;
 
   return (
     <div className="home">
@@ -72,28 +77,8 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </div>
       )}
 
-      {s.account === "demo" && (
-        <Card className="demo-card">
-          <strong>Это ваш демо-счёт</strong>
-          <p className="muted small">
-            {usd(s.paper_start_usdt ?? 1000)} виртуальных USDT по настоящим ценам Bybit. Можно торговать вручную
-            на «Торговать» и смотреть, как работает трендовый бот. Настоящие деньги не используются.
-          </p>
-        </Card>
-      )}
-      {real && s.accounts && (
-        <Card className="real-card">
-          <strong>Реальный счёт Bybit</strong>
-          <p className="muted small">
-            {viewOnly ? "Ключ только для чтения: баланс, активы и ордера видны здесь, сделки — в приложении Bybit."
-              : <>Сделки здесь — настоящие деньги. Бот {s.enabled === false ? "выключен: торгуете только вы" :
-                `включён и торгует в пределах ${usd(s.settings.capital_usdt)} USDT`}.</>}
-          </p>
-        </Card>
-      )}
-
       <section className="balance">
-        <span className="eyebrow">Общий баланс · USD</span>
+        <span className="eyebrow">Баланс Bybit · USD</span>
         {total == null ? <Skeleton height={44} width="60%" /> : <BigMoney value={total} unit="" />}
         <div className="row tight">
           {day && <span className={`chg tone-${tone(day.usd)}`}>{arrow(day.usd)}{pct(Math.abs(day.pct))}</span>}
@@ -103,98 +88,17 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
         </div>
       </section>
 
-      {viewOnly ? (
-        <div className="quick">
-          {s.p2p && onP2P && <button onClick={onP2P}><BookIcon size={20} className="tone-accent" />P2P</button>}
-          {s.exchanges && onExchanges && <button onClick={onExchanges}><WalletIcon size={20} className="tone-up" />Биржи</button>}
-          <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
-          <button onClick={() => onTab("markets")}><TrendIcon size={20} className="muted" />Рынки</button>
-        </div>
-      ) : (
-        <div className="quick">
-          <button onClick={() => onTab("trade")}><BuyIcon size={20} className="tone-up" />Купить</button>
-          <button onClick={() => onTab("trade")}><SellIcon size={20} className="tone-down" />Продать</button>
-          <button onClick={onBot}><BotIcon size={20} className="tone-accent" />Бот</button>
-          <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>
-        </div>
-      )}
+      {s.p2p && onP2P && <P2PCard data={p2p} onOpen={onP2P} />}
 
-      {viewOnly && s.p2p && onP2P && <P2PCard onOpen={onP2P} />}
+      <div className="quick">
+        {s.p2p && onP2P && <button onClick={onP2P}><BookIcon size={20} className="tone-accent" />P2P</button>}
+        {s.exchanges && onExchanges && <button onClick={onExchanges}><WalletIcon size={20} className="tone-up" />Биржи</button>}
+        {!s.read_only && <button onClick={() => onTab("trade")}><BuyIcon size={20} className="tone-up" />Купить</button>}
+        {!s.read_only && <button onClick={() => onTab("trade")}><SellIcon size={20} className="tone-down" />Продать</button>}
+        {s.read_only && <button onClick={() => onTab("assets")}><WalletIcon size={20} className="muted" />Активы</button>}
+      </div>
 
-      {!viewOnly && <>
-      <div className="sec-head"><h3 className="section-title">Торговые боты</h3>
-        <button className="link-btn" onClick={onBot}>Открыть <ChevronIcon size={14} /></button></div>
-      <Card className="bot-card">
-        <button className="bot-card-main" onClick={onBot}>
-          <span className={`led${s.enabled === false ? " off" : s.paused ? " amber" : ""}`} aria-hidden="true" />
-          <span className="row-main">
-            <strong>Трендовый бот</strong>
-            <span className="muted small">EMA {s.settings.ema_fast}/{s.settings.ema_slow} · 4ч · спот · {s.settings.coins.length} монет</span>
-          </span>
-          <span className="mode-tag">{s.enabled === false ? "ВЫКЛ" : MODE_TAG[s.mode]}</span>
-        </button>
-        <div className="grid3">
-          <div><small>КАПИТАЛ</small><b className="num">{usd(s.equity.total)}</b></div>
-          <div><small>P&amp;L</small><b className={`num tone-${tone(botPnl)}`}>{usd(botPnl, true)}</b></div>
-          <div><small>ПОЗИЦИИ</small><b className="num">{s.positions.length}/{s.settings.max_positions}</b></div>
-        </div>
-        <div className="side-row">
-          {entries.length > 0
-            ? <span className="sig-list">{entries.map((c) => <span key={c} className="sig-tag">▲ {c} вход</span>)}</span>
-            : <BotState status={s} />}
-          {s.enabled === false ? <BotPowerButton status={s} busy={busy} act={act} /> : <PauseButton status={s} busy={busy} act={act} />}
-        </div>
-      </Card>
-
-
-      {s.proposals.length > 0 && (
-        <>
-          <h3 className="section-title">Бот предлагает купить</h3>
-          {s.proposals.map((p, i) => <ProposalCard key={p.id} p={p} busy={busy} act={act} i={i} />)}
-        </>
-      )}
-
-      {s.positions.length > 0 && (
-        <>
-          <h3 className="section-title">Позиции бота</h3>
-          <div className="positions">
-            {s.positions.map((p, i) => <PositionCard key={p.coin} p={p} i={i} onOpen={() => onOpenCoin(p.coin)} />)}
-          </div>
-        </>
-      )}
-      </>}
-
-      {s.exchanges && onExchanges && (
-        <>
-          <div className="sec-head"><h3 className="section-title">Мои биржи</h3>
-            <button className="link-btn" onClick={onExchanges}>Открыть <ChevronIcon size={14} /></button></div>
-          <Card className="bot-card">
-            <button className="bot-card-main" onClick={onExchanges}>
-              <span className="row-main">
-                <strong>Bybit · Binance · OKX · KuCoin</strong>
-                <span className="muted small">балансы на всех биржах и где закрыт ввод/вывод — только просмотр</span>
-              </span>
-              <ChevronIcon size={18} />
-            </button>
-          </Card>
-        </>
-      )}
-
-      {s.p2p && onP2P && !viewOnly && (
-        <>
-          <div className="sec-head"><h3 className="section-title">P2P</h3>
-            <button className="link-btn" onClick={onP2P}>Открыть <ChevronIcon size={14} /></button></div>
-          <Card className="bot-card">
-            <button className="bot-card-main" onClick={onP2P}>
-              <span className="row-main">
-                <strong>P2P · USDT</strong>
-                <span className="muted small">спред по вашим способам оплаты, ордера и уведомления — только просмотр</span>
-              </span>
-              <ChevronIcon size={18} />
-            </button>
-          </Card>
-        </>
-      )}
+      {s.exchanges && onExchanges && <ExchangesCard data={exchanges} onOpen={onExchanges} />}
 
       {movers.length > 0 && (
         <>
@@ -205,8 +109,7 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
             {movers.map(([coin, t], i) => (
               <button key={coin} className="tr tappable" style={stagger(i)} onClick={() => onOpenCoin(coin)}>
                 <CoinAvatar coin={coin} size={30} tone={t.change24h >= 0 ? "up" : "down"} />
-                <span className="row-main"><strong>{coin}<span className="faint">/USDT</span></strong>
-                  {s.positions.some((p) => p.coin === coin) && <span className="small tone-accent">бот в позиции</span>}</span>
+                <span className="row-main"><strong>{coin}<span className="faint">/USDT</span></strong></span>
                 <span className="row-end">
                   <Flash value={t.price} className="num bold">{price(t.price)}</Flash>
                   <span className={`chg tone-${tone(t.change24h)}`}>{arrow(t.change24h)}{pct(Math.abs(t.change24h))}</span>
@@ -220,22 +123,57 @@ export function Home({ status: s, busy, act, onOpenCoin, onTab, onBot, onSetting
   );
 }
 
-/** Карточка P2P на главной: при счёте «только просмотр» — сразу под балансом. */
-function P2PCard({ onOpen }: { onOpen: () => void }) {
+/** P2P на главной — самое нужное без захода в раздел: оплаченные ордера, ваше объявление и место, уровень. */
+function P2PCard({ data, onOpen }: { data: P2PView | null; onOpen: () => void }) {
+  const ad = data?.my_ads?.find((a) => a.online) ?? data?.my_ads?.[0];
+  const pending = data?.pending ?? [];
+  const paid = pending.filter((o) => o.status === 20 && o.side === "sell");
+  const lv = data?.level;
+  const next = lv?.levels.find((l) => l.name === lv.next);
+  const cur = ad ? SYMBOL[ad.currency] ?? ad.currency : "";
   return (
-    <>
-      <div className="sec-head"><h3 className="section-title">P2P</h3>
-        <button className="link-btn" onClick={onOpen}>Открыть <ChevronIcon size={14} /></button></div>
-      <Card className="bot-card">
-        <button className="bot-card-main" onClick={onOpen}>
-          <span className="led" aria-hidden="true" />
-          <span className="row-main">
-            <strong>P2P · USDT</strong>
-            <span className="muted small">ваши объявления и место в выдаче, ордера, уровень мейкера, карты и лимиты</span>
-          </span>
-          <ChevronIcon size={18} />
-        </button>
-      </Card>
-    </>
+    <button className="home-p2p" onClick={onOpen}>
+      <div className="home-p2p-head">
+        <span className="small">P2P · мейкер{next ? ` · до «${next.name}» ${Math.round(Math.min(1, lv!.volume_30d / next.volume) * 100)}%` : ""}</span>
+        <ChevronIcon size={16} />
+      </div>
+      {!data ? <Skeleton height={56} /> : ad ? (
+        <div className="home-p2p-ad">
+          <div>
+            <b className="num">{price(ad.price)} {cur}</b>
+            <span className="small">{ad.side === "sell" ? "продаю" : "покупаю"} · осталось {price(ad.left)} {ad.token} · {ad.online ? "в сети" : "снято"}</span>
+          </div>
+          {(ad.rank_pay ?? ad.rank) != null && <span className={`home-p2p-place${(ad.rank_pay ?? ad.rank) === 1 ? " top" : ""}`}>#{ad.rank_pay ?? ad.rank}</span>}
+        </div>
+      ) : <span className="small">Объявлений нет — разместите в Bybit, и оно появится здесь</span>}
+      {next && <div className="home-p2p-bar"><i style={{ width: `${Math.min(1, lv!.volume_30d / next.volume) * 100}%` }} /></div>}
+      {paid.length > 0 ? (
+        <span className="home-p2p-alert">💰 Покупатель отметил оплату · {compact(paid[0].amount)} {SYMBOL[paid[0].currency] ?? paid[0].currency} — проверьте банк</span>
+      ) : pending.length > 0 ? <span className="small">Ордеров в работе: {pending.length}</span> : null}
+    </button>
+  );
+}
+
+/** Мои биржи: общий баланс и по каждой бирже — коротко, подробности по нажатию. */
+function ExchangesCard({ data, onOpen }: { data: MyExchanges | null; onOpen: () => void }) {
+  return (
+    <Card className="home-ex">
+      <button className="home-ex-main" onClick={onOpen}>
+        <span className="row-main">
+          <span className="small muted">Мои биржи</span>
+          {data ? <b className="num">{usd(data.total)} $</b> : <Skeleton height={22} width="40%" />}
+        </span>
+        <ChevronIcon size={18} />
+      </button>
+      {data && (
+        <div className="home-ex-list">
+          {data.exchanges.map((e) => (
+            <span key={e.name} className={e.connected && !e.error ? undefined : "off"}>
+              {e.name}<b className="num">{e.total != null ? `${compact(e.total)} $` : e.error ? "ошибка" : "—"}</b>
+            </span>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
