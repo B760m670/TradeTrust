@@ -195,3 +195,14 @@ def test_read_only_real_account_cannot_trade(owner):
     with pytest.raises(ValueError, match="только для чтения"):
         ro.manual_order("SOL", "buy", usdt=10)
     assert ro.status()["read_only"]
+
+
+def test_real_key_replaces_demo(monkeypatch):
+    for k, v in {"BYBIT_ENV": "demo", "BYBIT_API_KEY": "d", "BYBIT_API_SECRET": "ds", "BYBIT_FUTURES": "1",
+                 "BYBIT_REAL_API_KEY": "r", "BYBIT_REAL_API_SECRET": "rs"}.items():
+        monkeypatch.setenv(k, v)
+    cfg = Config.from_env()
+    assert cfg.env == "paper" and not cfg.futures and not cfg.api_key and cfg.has_real
+    monkeypatch.delenv("BYBIT_REAL_API_KEY")
+    monkeypatch.delenv("BYBIT_REAL_API_SECRET")
+    assert Config.from_env().env == "demo"  # без реального счёта демо остаётся
