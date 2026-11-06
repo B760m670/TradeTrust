@@ -757,21 +757,10 @@ class P2PDesk:
         return text
 
     def _ad_alerts(self) -> None:
-        """Раз в 5 минут: вас обогнали в выдаче (были первым среди своих банков — стали ниже) и объявление
-        заканчивается. Каждое — один раз, пока не изменится."""
-        ranks: dict = self.store.get("p2p_ad_rank") or {}
+        """Раз в 5 минут: объявление заканчивается — один раз, пока не пополните. «Вас обогнали» не шлём: место в
+        выдаче скачет от каждого чужого объявления, а цену вы двигаете сами, когда открываете приложение."""
         low: list = self.store.get("p2p_ad_low") or []
-        for c in {str(i.get("currencyId", "")) for i in self.p2p.my_ads()} & set(self.currencies):
-            self.market(c)  # свежий стакан по валютам ваших объявлений — для места в выдаче
-        ads = [a for a in self.my_ads(self.currencies[0]) if a["online"]]
-        for a in ads:
-            r = a.get("rank_pay")
-            if r is not None and ranks.get(a["id"]) == 1 and r > 1:
-                top = f" Стать первым — {n(a['top_price'])}, кнопкой в приложении." if a.get("top_price") else ""
-                self.notify(f"📉 Вас обогнали: объявление на {'продажу' if a['side'] == 'sell' else 'покупку'} по "
-                            f"{n(a['price'])} теперь #{r} среди ваших банков, лучший конкурент {n(a['best_rival'])}.{top}")
-            if r is not None:
-                ranks[a["id"]] = r
+        for a in (a for a in self.my_ads(self.currencies[0]) if a["online"]):
             short = a["total"] and (a["left"] / a["total"] < LOW_LEFT or a["left"] * a["price"] < a["min_amount"])
             if short and a["id"] not in low:
                 self.notify(f"🪫 Объявление по {n(a['price'])} заканчивается: осталось {n(a['left'])} {a['token']}. "
@@ -779,7 +768,6 @@ class P2PDesk:
                 low.append(a["id"])
             elif not short and a["id"] in low:
                 low.remove(a["id"])
-        self.store.set("p2p_ad_rank", {k: v for k, v in ranks.items() if k in {a["id"] for a in ads}})
         self.store.set("p2p_ad_low", low[-50:])
 
     # --- экран P2P ---------------------------------------------------------------------
