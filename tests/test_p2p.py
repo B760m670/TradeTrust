@@ -304,15 +304,14 @@ def test_ad_actions_send_full_body_and_guard_price(desk):
         d.ad_action("nope", "offline")
 
 
-def test_overtaken_and_running_low_alerts(desk):
+def test_running_low_alert_once_and_no_overtaken_spam(desk):
     d, fake, sent = desk
     fake.my = [{**MY_AD, "price": "82.5", "paymentTerms": [{"paymentType": 75}]}]
-    d._ad_alerts()  # первый: #1 среди Tinkoff (s2 — 82,6)
-    assert sent == []
+    d._ad_alerts()
     fake.sellers.append(ad("s9", 82.4, "1"))
     d._cache.clear()
     d._ad_alerts()
-    assert sent[0].startswith("📉 Вас обогнали") and "82,39" in sent[0]
+    assert sent == []  # обогнали — не пишем
     fake.my = [{**MY_AD, "price": "82.4", "lastQuantity": "50", "paymentTerms": [{"paymentType": 75}]}]
     d._cache.clear()
     d._ad_alerts()
